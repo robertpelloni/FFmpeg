@@ -62,6 +62,11 @@ if [ ! -z "${BUILD_REASON}" ]; then
 	exit 0
 fi
 
+#Stop here if we're in Azure
+if [ ! -z "${BUILD_REASON}" ]; then
+	exit 0
+fi
+
 #export PKG_CONFIG_PATH=$OLD_PKG_CONFIG_PATH
 
 UNIVERSAL_DIR="$4"
