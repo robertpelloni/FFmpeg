@@ -49,39 +49,39 @@ variables:
     - name: PUBLISH
       value: ''
 stages:
-  stage: Build
-  condition: or(eq(variables['TAGABLE'], 'true'), eq(variables['PUBLISH'], ''))
-  jobs:
-  - ${{ if eq(parameters.windows, true) }}:
-    - job: Windows2019
-      workspace:
-        clean: all
-      pool:
-          name: Default
-          demands:
-            - Agent.Name -equals Medusa
-      steps:
-        - template: win.yml
-
-    - ${{ if eq(parameters.linux, true) }}:
-      - job: Ubuntu22_04
+  - stage: Build
+    condition: or(eq(variables['TAGABLE'], 'true'), eq(variables['PUBLISH'], ''))
+    jobs:
+    - ${{ if eq(parameters.windows, true) }}:
+      - job: Windows2019
         workspace:
           clean: all
         pool:
-          name: UbuntuVMSS
+            name: Default
+            demands:
+              - Agent.Name -equals Medusa
         steps:
-          - template: ubuntu.yml
+          - template: win.yml
 
-    - ${{ if eq(parameters.mac, true) }}:
-      - job: Mac
-        workspace:
-          clean: all
-        pool:
-          name: Mac
-          demands:
-          - AppleSilicon
-        steps:
-          - template: macos.yml
+      - ${{ if eq(parameters.linux, true) }}:
+        - job: Ubuntu22_04
+          workspace:
+            clean: all
+          pool:
+            name: UbuntuVMSS
+          steps:
+            - template: ubuntu.yml
+
+      - ${{ if eq(parameters.mac, true) }}:
+        - job: Mac
+          workspace:
+            clean: all
+          pool:
+            name: Mac
+            demands:
+            - AppleSilicon
+          steps:
+            - template: macos.yml
   - ${{ if eq(parameters.publish, true) }}:
     - stage: Tag
       condition: succeeded('Build')
