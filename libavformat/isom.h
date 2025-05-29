@@ -61,7 +61,7 @@ typedef struct MOVStts {
 
 typedef struct MOVCtts {
     unsigned int count;
-    int duration;
+    int offset;
 } MOVCtts;
 
 typedef struct MOVStsc {
@@ -174,6 +174,7 @@ typedef struct MOVStreamContext {
     unsigned int chunk_count;
     int64_t *chunk_offsets;
     unsigned int stts_count;
+    unsigned int stts_allocated_size;
     MOVStts *stts_data;
     unsigned int sdtp_count;
     uint8_t *sdtp_data;
@@ -188,6 +189,8 @@ typedef struct MOVStreamContext {
     unsigned *stps_data;  ///< partial sync sample for mpeg-2 open gop
     MOVElst *elst_data;
     unsigned int elst_count;
+    int stts_index;
+    int stts_sample;
     int ctts_index;
     int ctts_sample;
     unsigned int sample_size; ///< may contain value calculated from stsd or value from stsz atom
@@ -283,8 +286,13 @@ typedef struct HEIFItem {
     int64_t extent_offset;
     int width;
     int height;
+    int rotation;
+    int hflip;
+    int vflip;
     int type;
     int is_idat_relative;
+    uint8_t *icc_profile;
+    size_t icc_profile_size;
 } HEIFItem;
 
 typedef struct HEIFGrid {
@@ -355,7 +363,7 @@ typedef struct MOVContext {
     uint32_t max_stts_delta;
     int primary_item_id;
     int cur_item_id;
-    HEIFItem *heif_item;
+    HEIFItem **heif_item;
     int nb_heif_item;
     HEIFGrid *heif_grid;
     int nb_heif_grid;

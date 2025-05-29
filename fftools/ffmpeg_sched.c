@@ -285,8 +285,9 @@ struct Scheduler {
     pthread_mutex_t     mux_ready_lock;
 
     unsigned         nb_mux_done;
-    pthread_mutex_t     mux_done_lock;
-    pthread_cond_t      mux_done_cond;
+    unsigned            task_failed;
+    pthread_mutex_t     finish_lock;
+    pthread_cond_t      finish_cond;
 
 
     SchDec             *dec;
@@ -306,7 +307,6 @@ struct Scheduler {
 
     enum SchedulerState state;
     atomic_int          terminate;
-    atomic_int          task_failed;
 
     pthread_mutex_t     schedule_lock;
 
@@ -571,8 +571,8 @@ void sch_free(Scheduler **psch)
 
     pthread_mutex_destroy(&sch->mux_ready_lock);
 
-    pthread_mutex_destroy(&sch->mux_done_lock);
-    pthread_cond_destroy(&sch->mux_done_cond);
+    pthread_mutex_destroy(&sch->finish_lock);
+    pthread_cond_destroy(&sch->finish_cond);
 
     av_freep(psch);
 }
@@ -602,11 +602,11 @@ Scheduler *sch_alloc(void)
     if (ret)
         goto fail;
 
-    ret = pthread_mutex_init(&sch->mux_done_lock, NULL);
+    ret = pthread_mutex_init(&sch->finish_lock, NULL);
     if (ret)
         goto fail;
 
-    ret = pthread_cond_init(&sch->mux_done_cond, NULL);
+    ret = pthread_cond_init(&sch->finish_cond, NULL);
     if (ret)
         goto fail;
 
@@ -1111,22 +1111,52 @@ static int mux_task_start(SchMux *mux)
         return ret;
 
     /* flush the pre-muxing queues */
-    for (unsigned i = 0; i < mux->nb_streams; i++) {
-        SchMuxStream *ms = &mux->streams[i];
+    while (1) {
+        int       min_stream = -1;
+        Timestamp min_ts     = { .ts = AV_NOPTS_VALUE };
+
         AVPacket *pkt;
 
-        while (av_fifo_read(ms->pre_mux_queue.fifo, &pkt, 1) >= 0) {
+        // find the stream with the earliest dts or EOF in pre-muxing queue
+        for (unsigned i = 0; i < mux->nb_streams; i++) {
+            SchMuxStream *ms = &mux->streams[i];
+
+            if (av_fifo_peek(ms->pre_mux_queue.fifo, &pkt, 1, 0) < 0)
+                continue;
+
+            if (!pkt || pkt->dts == AV_NOPTS_VALUE) {
+                min_stream = i;
+                break;
+            }
+
+            if (min_ts.ts == AV_NOPTS_VALUE ||
+                av_compare_ts(min_ts.ts, min_ts.tb, pkt->dts, pkt->time_base) > 0) {
+                min_stream = i;
+                min_ts     = (Timestamp){ .ts = pkt->dts, .tb = pkt->time_base };
+            }
+        }
+
+        if (min_stream >= 0) {
+            SchMuxStream *ms = &mux->streams[min_stream];
+
+            ret = av_fifo_read(ms->pre_mux_queue.fifo, &pkt, 1);
+            av_assert0(ret >= 0);
+
             if (pkt) {
                 if (!ms->init_eof)
-                    ret = tq_send(mux->queue, i, pkt);
+                    ret = tq_send(mux->queue, min_stream, pkt);
                 av_packet_free(&pkt);
                 if (ret == AVERROR_EOF)
                     ms->init_eof = 1;
                 else if (ret < 0)
                     return ret;
             } else
-                tq_send_finish(mux->queue, i);
+                tq_send_finish(mux->queue, min_stream);
+
+            continue;
         }
+
+        break;
     }
 
     atomic_store(&mux->mux_started, 1);
@@ -1634,29 +1664,27 @@ fail:
 
 int sch_wait(Scheduler *sch, uint64_t timeout_us, int64_t *transcode_ts)
 {
-    int ret, err;
+    int ret;
 
     // convert delay to absolute timestamp
     timeout_us += av_gettime();
 
-    pthread_mutex_lock(&sch->mux_done_lock);
+    pthread_mutex_lock(&sch->finish_lock);
 
     if (sch->nb_mux_done < sch->nb_mux) {
         struct timespec tv = { .tv_sec  =  timeout_us / 1000000,
                                .tv_nsec = (timeout_us % 1000000) * 1000 };
-        pthread_cond_timedwait(&sch->mux_done_cond, &sch->mux_done_lock, &tv);
+        pthread_cond_timedwait(&sch->finish_cond, &sch->finish_lock, &tv);
     }
 
-    ret = sch->nb_mux_done == sch->nb_mux;
+    // abort transcoding if any task failed
+    ret = sch->nb_mux_done == sch->nb_mux || sch->task_failed;
 
-    pthread_mutex_unlock(&sch->mux_done_lock);
+    pthread_mutex_unlock(&sch->finish_lock);
 
     *transcode_ts = atomic_load(&sch->last_dts);
 
-    // abort transcoding if any task failed
-    err = atomic_load(&sch->task_failed);
-
-    return ret || err;
+    return ret;
 }
 
 static int enc_open(Scheduler *sch, SchEnc *enc, const AVFrame *frame)
@@ -2122,14 +2150,14 @@ static int mux_done(Scheduler *sch, unsigned mux_idx)
 
     pthread_mutex_unlock(&sch->schedule_lock);
 
-    pthread_mutex_lock(&sch->mux_done_lock);
+    pthread_mutex_lock(&sch->finish_lock);
 
     av_assert0(sch->nb_mux_done < sch->nb_mux);
     sch->nb_mux_done++;
 
-    pthread_cond_signal(&sch->mux_done_cond);
+    pthread_cond_signal(&sch->finish_cond);
 
-    pthread_mutex_unlock(&sch->mux_done_lock);
+    pthread_mutex_unlock(&sch->finish_lock);
 
     return 0;
 }
@@ -2522,8 +2550,12 @@ static void *task_wrapper(void *arg)
     // EOF is considered normal termination
     if (ret == AVERROR_EOF)
         ret = 0;
-    if (ret < 0)
-        atomic_store(&sch->task_failed, 1);
+    if (ret < 0) {
+        pthread_mutex_lock(&sch->finish_lock);
+        sch->task_failed = 1;
+        pthread_cond_signal(&sch->finish_cond);
+        pthread_mutex_unlock(&sch->finish_lock);
+    }
 
     av_log(task->func_arg, ret < 0 ? AV_LOG_ERROR : AV_LOG_VERBOSE,
            "Terminating thread with return code %d (%s)\n", ret,
