@@ -20,28 +20,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-<<<<<<< HEAD
-uint slice_coord(uint width, uint sx, uint num_h_slices, uint chroma_shift)
-{
-    uint mpw = 1 << chroma_shift;
-    uint awidth = align(width, mpw);
-
-    if ((version < 4) || ((version == 4) && (micro_version < 3)))
-        return width * sx / num_h_slices;
-
-    sx = (2 * awidth * sx + num_h_slices * mpw) / (2 * num_h_slices * mpw) * mpw;
-    if (sx == awidth)
-        sx = width;
-
-    return sx;
-}
-
-void init_slice(out SliceContext sc, const uint slice_idx)
-=======
 uint8_t state[CONTEXT_SIZE];
 
 void init_slice(inout SliceContext sc, const uint slice_idx)
->>>>>>> upstream/master
 {
     /* Set coordinates */
     uvec2 img_size = imageSize(src[0]);
@@ -57,14 +38,11 @@ void init_slice(inout SliceContext sc, const uint slice_idx)
     sc.slice_pos = ivec2(sxs, sys);
     sc.slice_dim = ivec2(sxe - sxs, sye - sys);
     sc.slice_coding_mode = int(force_pcm == 1);
-<<<<<<< HEAD
-=======
     sc.slice_reset_contexts = sc.slice_coding_mode == 1;
     sc.quant_table_idx = u8vec3(context_model);
 
     if ((rct_search == 0) || (sc.slice_coding_mode == 1))
         sc.slice_rct_coef = ivec2(1, 1);
->>>>>>> upstream/master
 
     rac_init(sc.c,
              OFFBUF(u8buf, out_data, slice_idx * slice_size_max),
@@ -107,13 +85,8 @@ void write_slice_header(inout SliceContext sc)
     put_usymbol(sc.c, sar.y);
 
     if (version >= 4) {
-<<<<<<< HEAD
-        put_rac_full(sc.c, state, sc.slice_coding_mode == 1);
-        put_symbol_unsigned(sc.c, state, sc.slice_coding_mode);
-=======
         put_rac_direct(sc.c, state[0], sc.slice_reset_contexts);
         put_usymbol(sc.c, sc.slice_coding_mode);
->>>>>>> upstream/master
         if (sc.slice_coding_mode != 1 && colorspace == 1) {
             put_usymbol(sc.c, sc.slice_rct_coef.y);
             put_usymbol(sc.c, sc.slice_rct_coef.x);
