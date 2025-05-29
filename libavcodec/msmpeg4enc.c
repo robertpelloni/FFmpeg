@@ -221,8 +221,9 @@ void ff_msmpeg4_encode_picture_header(MpegEncContext * s)
 
     find_best_tables(ms);
 
-    align_put_bits(&s->pb);
-    put_bits(&s->pb, 2, s->pict_type - 1);
+    put_bits_assume_flushed(&s->pb);
+
+    put_bits(&s->pb, 2, s->c.pict_type - 1);
 
     put_bits(&s->pb, 5, s->qscale);
     if (s->msmpeg4_version <= MSMP4_V2) {

@@ -239,83 +239,12 @@ static int libjxl_populate_primaries(void *avctx, JxlColorEncoding *jxl_color, e
     return 0;
 }
 
-/**
- * Encode an entire frame. Currently animation, is not supported by
- * this encoder, so this will always reinitialize a new still image
- * and encode a one-frame image (for image2 and image2pipe).
- */
-static int libjxl_encode_frame(AVCodecContext *avctx, AVPacket *pkt, const AVFrame *frame, int *got_packet)
+static int libjxl_populate_colorspace(AVCodecContext *avctx, const AVFrame *frame,
+                                      const AVPixFmtDescriptor *pix_desc, const JxlBasicInfo *info)
 {
-    LibJxlEncodeContext *ctx = avctx->priv_data;
-    AVFrameSideData *sd;
-    const AVPixFmtDescriptor *pix_desc = av_pix_fmt_desc_get(frame->format);
-    JxlBasicInfo info;
     JxlColorEncoding jxl_color;
-    JxlPixelFormat jxl_fmt;
-    int bits_per_sample;
-#if JPEGXL_NUMERIC_VERSION >= JPEGXL_COMPUTE_NUMERIC_VERSION(0, 8, 0)
-    JxlBitDepth jxl_bit_depth;
-#endif
-    JxlEncoderStatus jret;
+    LibJxlEncodeContext *ctx = avctx->priv_data;
     int ret;
-    size_t available = ctx->buffer_size;
-    size_t bytes_written = 0;
-    uint8_t *next_out = ctx->buffer;
-    const uint8_t *data;
-
-    ret = libjxl_init_jxl_encoder(avctx);
-    if (ret) {
-        av_log(avctx, AV_LOG_ERROR, "Error frame-initializing JxlEncoder\n");
-        return ret;
-    }
-
-    /* populate the basic info settings */
-    JxlEncoderInitBasicInfo(&info);
-    jxl_fmt.num_channels = pix_desc->nb_components;
-    info.xsize = frame->width;
-    info.ysize = frame->height;
-    info.num_extra_channels = (jxl_fmt.num_channels + 1) % 2;
-    info.num_color_channels = jxl_fmt.num_channels - info.num_extra_channels;
-    bits_per_sample = av_get_bits_per_pixel(pix_desc) / jxl_fmt.num_channels;
-    info.bits_per_sample = avctx->bits_per_raw_sample > 0 && !(pix_desc->flags & AV_PIX_FMT_FLAG_FLOAT)
-                           ? avctx->bits_per_raw_sample : bits_per_sample;
-    info.alpha_bits = (info.num_extra_channels > 0) * info.bits_per_sample;
-    if (pix_desc->flags & AV_PIX_FMT_FLAG_FLOAT) {
-        info.exponent_bits_per_sample = info.bits_per_sample > 16 ? 8 : 5;
-        info.alpha_exponent_bits = info.alpha_bits ? info.exponent_bits_per_sample : 0;
-        jxl_fmt.data_type = info.bits_per_sample > 16 ? JXL_TYPE_FLOAT : JXL_TYPE_FLOAT16;
-    } else {
-        info.exponent_bits_per_sample = 0;
-        info.alpha_exponent_bits = 0;
-        jxl_fmt.data_type = info.bits_per_sample <= 8 ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16;
-    }
-
-#if JPEGXL_NUMERIC_VERSION >= JPEGXL_COMPUTE_NUMERIC_VERSION(0, 8, 0)
-    jxl_bit_depth.bits_per_sample = bits_per_sample;
-    jxl_bit_depth.type = JXL_BIT_DEPTH_FROM_PIXEL_FORMAT;
-    jxl_bit_depth.exponent_bits_per_sample = pix_desc->flags & AV_PIX_FMT_FLAG_FLOAT ?
-                                             info.exponent_bits_per_sample : 0;
-#endif
-
-    /* JPEG XL format itself does not support limited range */
-    if (avctx->color_range == AVCOL_RANGE_MPEG ||
-        avctx->color_range == AVCOL_RANGE_UNSPECIFIED && frame->color_range == AVCOL_RANGE_MPEG)
-        av_log(avctx, AV_LOG_WARNING, "This encoder does not support limited (tv) range, colors will be wrong!\n");
-    else if (avctx->color_range != AVCOL_RANGE_JPEG && frame->color_range != AVCOL_RANGE_JPEG)
-        av_log(avctx, AV_LOG_WARNING, "Unknown color range, assuming full (pc)\n");
-
-    /* bitexact lossless requires there to be no XYB transform */
-    info.uses_original_profile = ctx->distance == 0.0 || !ctx->xyb;
-    info.orientation = frame->linesize[0] >= 0 ? JXL_ORIENT_IDENTITY : JXL_ORIENT_FLIP_VERTICAL;
-
-    if (JxlEncoderSetBasicInfo(ctx->encoder, &info) != JXL_ENC_SUCCESS) {
-        av_log(avctx, AV_LOG_ERROR, "Failed to set JxlBasicInfo\n");
-        return AVERROR_EXTERNAL;
-    }
-
-    /* rendering intent doesn't matter here
-     * but libjxl will whine if we don't set it */
-    jxl_color.rendering_intent = JXL_RENDERING_INTENT_RELATIVE;
 
     switch (frame->color_trc && frame->color_trc != AVCOL_TRC_UNSPECIFIED
             ? frame->color_trc : avctx->color_trc) {
@@ -347,32 +276,116 @@ static int libjxl_encode_frame(AVCodecContext *avctx, AVPacket *pkt, const AVFra
         break;
     default:
         if (pix_desc->flags & AV_PIX_FMT_FLAG_FLOAT) {
-            av_log(avctx, AV_LOG_WARNING, "Unknown transfer function, assuming Linear Light. Colors may be wrong.\n");
+            av_log(avctx, AV_LOG_WARNING,
+                    "Unknown transfer function, assuming Linear Light. Colors may be wrong.\n");
             jxl_color.transfer_function = JXL_TRANSFER_FUNCTION_LINEAR;
         } else {
-            av_log(avctx, AV_LOG_WARNING, "Unknown transfer function, assuming IEC61966-2-1/sRGB. Colors may be wrong.\n");
+            av_log(avctx, AV_LOG_WARNING,
+                    "Unknown transfer function, assuming IEC61966-2-1/sRGB. Colors may be wrong.\n");
             jxl_color.transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
         }
     }
 
-    /* This should be implied to be honest
-     * but a libjxl bug makes it fail otherwise */
-    if (info.num_color_channels == 1)
+    jxl_color.rendering_intent = JXL_RENDERING_INTENT_RELATIVE;
+    if (info->num_color_channels == 1)
         jxl_color.color_space = JXL_COLOR_SPACE_GRAY;
     else
         jxl_color.color_space = JXL_COLOR_SPACE_RGB;
 
     ret = libjxl_populate_primaries(avctx, &jxl_color,
-            frame->color_primaries && frame->color_primaries != AVCOL_PRI_UNSPECIFIED
-            ? frame->color_primaries : avctx->color_primaries);
+        frame->color_primaries && frame->color_primaries != AVCOL_PRI_UNSPECIFIED
+        ? frame->color_primaries : avctx->color_primaries);
     if (ret < 0)
         return ret;
 
-    sd = av_frame_get_side_data(frame, AV_FRAME_DATA_ICC_PROFILE);
-    if (sd && sd->size && JxlEncoderSetICCProfile(ctx->encoder, sd->data, sd->size) != JXL_ENC_SUCCESS)
-        av_log(avctx, AV_LOG_WARNING, "Could not set ICC Profile\n");
-    if (JxlEncoderSetColorEncoding(ctx->encoder, &jxl_color) != JXL_ENC_SUCCESS)
+    if (JxlEncoderSetColorEncoding(ctx->encoder, &jxl_color) != JXL_ENC_SUCCESS) {
         av_log(avctx, AV_LOG_WARNING, "Failed to set JxlColorEncoding\n");
+        return AVERROR_EXTERNAL;
+    }
+
+    return 0;
+}
+
+/**
+ * Sends metadata to libjxl based on the first frame of the stream, such as pixel format,
+ * orientation, bit depth, and that sort of thing.
+ */
+static int libjxl_preprocess_stream(AVCodecContext *avctx, const AVFrame *frame, int animated)
+{
+    JxlColorEncoding jxl_color;
+    LibJxlEncodeContext *ctx = avctx->priv_data;
+    AVFrameSideData *sd;
+    const AVPixFmtDescriptor *pix_desc = av_pix_fmt_desc_get(frame->format);
+    JxlBasicInfo info;
+    JxlPixelFormat *jxl_fmt = &ctx->jxl_fmt;
+    int bits_per_sample;
+#if JPEGXL_NUMERIC_VERSION >= JPEGXL_COMPUTE_NUMERIC_VERSION(0, 8, 0)
+    JxlBitDepth jxl_bit_depth;
+#endif
+
+    /* populate the basic info settings */
+    JxlEncoderInitBasicInfo(&info);
+    jxl_fmt->num_channels = pix_desc->nb_components;
+    info.xsize = frame->width;
+    info.ysize = frame->height;
+    info.num_extra_channels = (jxl_fmt->num_channels + 1) & 0x1;
+    info.num_color_channels = jxl_fmt->num_channels - info.num_extra_channels;
+    bits_per_sample = av_get_bits_per_pixel(pix_desc) / jxl_fmt->num_channels;
+    info.bits_per_sample = avctx->bits_per_raw_sample > 0 && !(pix_desc->flags & AV_PIX_FMT_FLAG_FLOAT)
+                           ? avctx->bits_per_raw_sample : bits_per_sample;
+    info.alpha_bits = (info.num_extra_channels > 0) * info.bits_per_sample;
+    if (pix_desc->flags & AV_PIX_FMT_FLAG_FLOAT) {
+        info.exponent_bits_per_sample = info.bits_per_sample > 16 ? 8 : 5;
+        info.alpha_exponent_bits = info.alpha_bits ? info.exponent_bits_per_sample : 0;
+        jxl_fmt->data_type = info.bits_per_sample > 16 ? JXL_TYPE_FLOAT : JXL_TYPE_FLOAT16;
+    } else {
+        info.exponent_bits_per_sample = 0;
+        info.alpha_exponent_bits = 0;
+        jxl_fmt->data_type = info.bits_per_sample <= 8 ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16;
+    }
+
+#if JPEGXL_NUMERIC_VERSION >= JPEGXL_COMPUTE_NUMERIC_VERSION(0, 8, 0)
+    jxl_bit_depth.bits_per_sample = bits_per_sample;
+    jxl_bit_depth.type = JXL_BIT_DEPTH_FROM_PIXEL_FORMAT;
+    jxl_bit_depth.exponent_bits_per_sample = pix_desc->flags & AV_PIX_FMT_FLAG_FLOAT ?
+                                             info.exponent_bits_per_sample : 0;
+#endif
+
+    /* JPEG XL format itself does not support limited range */
+    if (avctx->color_range == AVCOL_RANGE_MPEG ||
+        avctx->color_range == AVCOL_RANGE_UNSPECIFIED && frame->color_range == AVCOL_RANGE_MPEG)
+        av_log(avctx, AV_LOG_WARNING, "This encoder does not support limited (tv) range, colors will be wrong!\n");
+    else if (avctx->color_range != AVCOL_RANGE_JPEG && frame->color_range != AVCOL_RANGE_JPEG)
+        av_log(avctx, AV_LOG_WARNING, "Unknown color range, assuming full (pc)\n");
+
+    /* bitexact lossless requires there to be no XYB transform */
+    info.uses_original_profile = ctx->distance == 0.0 || !ctx->xyb;
+
+    /* libjxl doesn't support negative linesizes so we use orientation to work around this */
+    info.orientation = frame->linesize[0] >= 0 ? JXL_ORIENT_IDENTITY : JXL_ORIENT_FLIP_VERTICAL;
+
+    if (animated) {
+        info.have_animation = 1;
+        info.animation.have_timecodes = 0;
+        info.animation.num_loops = 0;
+        /* avctx->timebase is in seconds per tick, so we take the reciprocol */
+        info.animation.tps_numerator = avctx->time_base.den;
+        info.animation.tps_denominator = avctx->time_base.num;
+    }
+
+    if (JxlEncoderSetBasicInfo(ctx->encoder, &info) != JXL_ENC_SUCCESS) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to set JxlBasicInfo\n");
+        return AVERROR_EXTERNAL;
+    }
+
+    sd = av_frame_get_side_data(frame, AV_FRAME_DATA_ICC_PROFILE);
+    if (sd && sd->size && JxlEncoderSetICCProfile(ctx->encoder, sd->data, sd->size) != JXL_ENC_SUCCESS) {
+        av_log(avctx, AV_LOG_WARNING, "Could not set ICC Profile\n");
+        sd = NULL;
+    }
+
+    if (!sd || !sd->size)
+        libjxl_populate_colorspace(avctx, frame, pix_desc, &info);
 
 #if JPEGXL_NUMERIC_VERSION >= JPEGXL_COMPUTE_NUMERIC_VERSION(0, 8, 0)
     if (JxlEncoderSetFrameBitDepth(ctx->options, &jxl_bit_depth) != JXL_ENC_SUCCESS)

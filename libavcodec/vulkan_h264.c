@@ -364,16 +364,10 @@ static int vk_h264_start_frame(AVCodecContext          *avctx,
     int err;
     int dpb_slot_index = 0;
     H264Context *h = avctx->priv_data;
+
     H264Picture *pic = h->cur_pic_ptr;
-    FFVulkanDecodeContext *dec = avctx->internal->hwaccel_priv_data;
     H264VulkanDecodePicture *hp = pic->hwaccel_picture_private;
     FFVulkanDecodePicture *vp = &hp->vp;
-
-    if (!dec->session_params) {
-        err = vk_h264_create_params(avctx, &dec->session_params);
-        if (err < 0)
-            return err;
-    }
 
     /* Fill in main slot */
     dpb_slot_index = 0;
@@ -535,7 +529,7 @@ static int vk_h264_end_frame(AVCodecContext *avctx)
         rav[i] = hp->ref_src[i]->f;
     }
 
-    av_log(avctx, AV_LOG_VERBOSE, "Decoding frame, %"SIZE_SPECIFIER" bytes, %i slices\n",
+    av_log(avctx, AV_LOG_DEBUG, "Decoding frame, %"SIZE_SPECIFIER" bytes, %i slices\n",
            vp->slices_size, hp->h264_pic_info.sliceCount);
 
     return ff_vk_decode_frame(avctx, pic->f, vp, rav, rvp);

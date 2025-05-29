@@ -31,6 +31,8 @@
 
 #include "hqx.h"
 #include "hqxdsp.h"
+#include "hqxvlc.h"
+#include "hq_common.h"
 
 /* HQX has four modes - 422, 444, 422alpha and 444alpha - all 12-bit */
 enum HQXFormat {
@@ -193,21 +195,18 @@ static int hqx_decode_422a(HQXContext *ctx, int slice_no, int x, int y)
     int flag = 0;
     int last_dc;
     int i, ret;
-    int cbp;
 
-    cbp = get_vlc2(gb, ctx->cbp_vlc.table, HQX_CBP_VLC_BITS, 1);
-
-    for (i = 0; i < 12; i++)
-        memset(slice->block[i], 0, sizeof(**slice->block) * 64);
+    memset(slice->block, 0, sizeof(*slice->block) * 12);
     for (i = 0; i < 12; i++)
         slice->block[i][0] = -0x800;
+
+    int cbp = get_vlc2(gb, ff_hq_cbp_vlc, HQ_CBP_VLC_BITS, 1);
     if (cbp) {
         if (ctx->interlaced)
             flag = get_bits1(gb);
 
         quants = hqx_quants[get_bits(gb, 4)];
 
-        cbp |= cbp << 4; // alpha CBP
         if (cbp & 0x3)   // chroma CBP - top
             cbp |= 0x500;
         if (cbp & 0xC)   // chroma CBP - bottom
@@ -279,21 +278,18 @@ static int hqx_decode_444a(HQXContext *ctx, int slice_no, int x, int y)
     int flag = 0;
     int last_dc;
     int i, ret;
-    int cbp;
 
-    cbp = get_vlc2(gb, ctx->cbp_vlc.table, HQX_CBP_VLC_BITS, 1);
-
-    for (i = 0; i < 16; i++)
-        memset(slice->block[i], 0, sizeof(**slice->block) * 64);
+    memset(slice->block, 0, sizeof(*slice->block) * 16);
     for (i = 0; i < 16; i++)
         slice->block[i][0] = -0x800;
+
+    int cbp = get_vlc2(gb, ff_hq_cbp_vlc, HQ_CBP_VLC_BITS, 1);
     if (cbp) {
         if (ctx->interlaced)
             flag = get_bits1(gb);
 
         quants = hqx_quants[get_bits(gb, 4)];
 
-        cbp |= cbp << 4; // alpha CBP
         cbp |= cbp << 8; // chroma CBP
         for (i = 0; i < 16; i++) {
             if (i == 0 || i == 4 || i == 8 || i == 12)

@@ -28,6 +28,7 @@
 #include "msmpeg4enc.h"
 #include "msmpeg4data.h"
 #include "msmpeg4_vc1_data.h"
+#include "put_bits.h"
 #include "wmv2.h"
 #include "wmv2enc.h"
 
@@ -96,7 +97,11 @@ static av_cold int wmv2_encode_init(AVCodecContext *avctx)
 
 int ff_wmv2_encode_picture_header(MpegEncContext *s)
 {
-    WMV2EncContext *const w = (WMV2EncContext *) s;
+    WMV2EncContext *const w = (WMV2EncContext *) m;
+    MSMPEG4EncContext *const ms = &w->msmpeg4;
+    MPVEncContext *const s = &m->s;
+
+    put_bits_assume_flushed(&s->pb);
 
     put_bits(&s->pb, 1, s->pict_type - 1);
     if (s->pict_type == AV_PICTURE_TYPE_I)

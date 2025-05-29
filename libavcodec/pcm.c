@@ -256,6 +256,8 @@ static av_cold int pcm_decode_init(AVCodecContext *avctx)
     int i;
 
     switch (avctx->codec_id) {
+    default:
+        av_unreachable("pcm_lut_decode_init() only used with alaw, mulaw and vidc");
     case AV_CODEC_ID_PCM_ALAW:
         for (i = 0; i < 256; i++)
             s->table[i] = alaw2linear(i);

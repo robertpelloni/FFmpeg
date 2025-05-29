@@ -46,6 +46,7 @@
 #include "mathops.h"
 #include "mpegutils.h"
 #include "internal.h"
+#include "put_bits.h"
 
 /**
  * Table of number of bits a motion vector component needs.
@@ -114,7 +115,9 @@ void ff_h263_encode_picture_header(MpegEncContext * s)
     int best_error= INT_MAX;
     int custom_pcf;
 
-    if(s->h263_plus){
+    put_bits_assume_flushed(&s->pb);
+
+    if (s->c.codec_id == AV_CODEC_ID_H263P) {
         for(i=0; i<2; i++){
             int div, error;
             div= (s->avctx->time_base.num*1800000LL + 500LL*s->avctx->time_base.den) / ((1000LL+i)*s->avctx->time_base.den);
@@ -131,10 +134,6 @@ void ff_h263_encode_picture_header(MpegEncContext * s)
     coded_frame_rate= 1800000;
     coded_frame_rate_base= (1000+best_clock_code)*best_divisor;
 
-    align_put_bits(&s->pb);
-
-    /* Update the pointer to last GOB */
-    s->ptr_lastgob = put_bits_ptr(&s->pb);
     put_bits(&s->pb, 22, 0x20); /* PSC */
     temp_ref= s->picture_number * (int64_t)coded_frame_rate * s->avctx->time_base.num / //FIXME use timestamp
                          (coded_frame_rate_base * (int64_t)s->avctx->time_base.den);
@@ -146,8 +145,8 @@ void ff_h263_encode_picture_header(MpegEncContext * s)
     put_bits(&s->pb, 1, 0);     /* camera  off */
     put_bits(&s->pb, 1, 0);     /* freeze picture release off */
 
-    format = ff_match_2uint16(ff_h263_format, FF_ARRAY_ELEMS(ff_h263_format), s->width, s->height);
-    if (!s->h263_plus) {
+    format = ff_match_2uint16(ff_h263_format, FF_ARRAY_ELEMS(ff_h263_format), s->c.width, s->c.height);
+    if (s->c.codec_id != AV_CODEC_ID_H263P) {
         /* H.263v1 */
         put_bits(&s->pb, 3, format);
         put_bits(&s->pb, 1, (s->pict_type == AV_PICTURE_TYPE_P));
@@ -840,6 +839,12 @@ av_cold void ff_h263_encode_init(MpegEncContext *s)
         s->intra_ac_vlc_last_length= uni_h263_intra_aic_rl_len + 128*64;
     }
     s->ac_esc_length= 7+1+6+8;
+
+    if (s->c.modified_quant)
+        s->c.chroma_qscale_table = ff_h263_chroma_qscale_table;
+
+    // Only used for H.263 and H.263+
+    s->c.gob_index = H263_GOB_HEIGHT(s->c.height);
 
     // use fcodes >1 only for MPEG-4 & H.263 & H.263+ FIXME
     switch(s->codec_id){

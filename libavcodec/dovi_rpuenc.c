@@ -31,7 +31,7 @@
 #include "put_golomb.h"
 #include "refstruct.h"
 
-static struct {
+static const struct {
     uint64_t pps; // maximum pixels per second
     int width; // maximum width
     int main; // maximum bitrate in main tier

@@ -616,10 +616,12 @@ static int decode_vps_ext(GetBitContext *gb, AVCodecContext *avctx, HEVCVPS *vps
     }
 
     /* Consequence of established layer dependencies */
-    if (layer1_id_included != ((1 << vps->layer_id_in_nuh[0]) |
-                               (1 << vps->layer_id_in_nuh[1]))) {
-        av_log(avctx, AV_LOG_ERROR, "Dependent layer not included in layer ID?\n");
-        return AVERROR_PATCHWELCOME;
+    if (layer1_id_included &&
+        layer1_id_included != ((1ULL << vps->layer_id_in_nuh[0]) |
+                               (1ULL << vps->layer_id_in_nuh[1]))) {
+            av_log(avctx, AV_LOG_ERROR,
+                   "Dependent layer not included in layer ID?\n");
+            return AVERROR_PATCHWELCOME;
     }
 
     vps->num_output_layer_sets = 2;

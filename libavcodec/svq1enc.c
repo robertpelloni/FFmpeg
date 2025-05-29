@@ -330,21 +330,20 @@ static int svq1_encode_plane(SVQ1EncContext *s, int plane,
         s->m.linesize                      =
         s->m.last_pic.linesize[0]    =
         s->m.new_pic->linesize[0]      =
-        s->m.cur_pic.linesize[0] = stride;
-        s->m.width                         = width;
-        s->m.height                        = height;
-        s->m.mb_width                      = block_width;
-        s->m.mb_height                     = block_height;
-        s->m.mb_stride                     = s->m.mb_width + 1;
-        s->m.b8_stride                     = 2 * s->m.mb_width + 1;
-        s->m.f_code                        = 1;
-        s->m.pict_type                     = s->pict_type;
-        s->m.motion_est                    = s->motion_est;
-        s->m.me.scene_change_score         = 0;
-        // s->m.out_format                    = FMT_H263;
-        // s->m.unrestricted_mv               = 1;
-        s->m.lambda                        = s->quality;
-        s->m.qscale                        = s->m.lambda * 139 +
+        s2->cur_pic.linesize[0] = stride;
+        s2->width                         = width;
+        s2->height                        = height;
+        s2->mb_width                      = block_width;
+        s2->mb_height                     = block_height;
+        s2->mb_stride                     = s2->mb_width + 1;
+        s2->b8_stride                     = 2 * s2->mb_width + 1;
+        s->m.f_code                       = 1;
+        s2->pict_type                     = s->pict_type;
+        s->m.me.scene_change_score        = 0;
+        // s2->out_format                    = FMT_H263;
+        // s2->unrestricted_mv               = 1;
+        s->m.lambda                       = s->quality;
+        s2->qscale                        = s->m.lambda * 139 +
                                              FF_LAMBDA_SCALE * 64 >>
                                              FF_LAMBDA_SHIFT + 7;
         s->m.lambda2                       = s->m.lambda * s->m.lambda +
@@ -596,6 +595,15 @@ static av_cold int svq1_encode_init(AVCodecContext *avctx)
     if (!s->current_picture || !s->last_picture) {
         return AVERROR(ENOMEM);
     }
+    ret = ff_encode_alloc_frame(avctx, s->current_picture);
+    if (ret < 0)
+        return ret;
+    ret = ff_encode_alloc_frame(avctx, s->last_picture);
+    if (ret < 0)
+        return ret;
+    s->scratchbuf = av_malloc_array(s->current_picture->linesize[0], 16 * 3);
+    if (!s->scratchbuf)
+        return AVERROR(ENOMEM);
 
     s->frame_width  = avctx->width;
     s->frame_height = avctx->height;
@@ -647,27 +655,6 @@ static int svq1_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                           MAX_MB_BYTES * 3 + FF_INPUT_BUFFER_MIN_SIZE);
     if (ret < 0)
         return ret;
-
-    if (avctx->pix_fmt != AV_PIX_FMT_YUV410P) {
-        av_log(avctx, AV_LOG_ERROR, "unsupported pixel format\n");
-        return -1;
-    }
-
-    if (!s->current_picture->data[0]) {
-        if ((ret = ff_encode_alloc_frame(avctx, s->current_picture)) < 0) {
-            return ret;
-        }
-    }
-    if (!s->last_picture->data[0]) {
-        ret = ff_encode_alloc_frame(avctx, s->last_picture);
-        if (ret < 0)
-            return ret;
-    }
-    if (!s->scratchbuf) {
-        s->scratchbuf = av_malloc_array(s->current_picture->linesize[0], 16 * 3);
-        if (!s->scratchbuf)
-            return AVERROR(ENOMEM);
-    }
 
     FFSWAP(AVFrame*, s->current_picture, s->last_picture);
 

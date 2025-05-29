@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2002 The FFmpeg Project
+ * Copyright 2005 Balatoni Denes
+ * Copyright 2006 Loren Merritt
  *
  * This file is part of FFmpeg.
  *
@@ -18,14 +19,14 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVCODEC_WMV2ENC_H
-#define AVCODEC_WMV2ENC_H
+#include "float_dsp.h"
 
-#include "mpegvideo.h"
+float ff_scalarproduct_float_c(const float *v1, const float *v2, int len)
+{
+    float p = 0.0;
 
-int ff_wmv2_encode_picture_header(MpegEncContext * s);
-void ff_wmv2_encode_mb(MpegEncContext * s, int16_t block[6][64],
-                       int motion_x, int motion_y);
+    for (int i = 0; i < len; i++)
+        p += v1[i] * v2[i];
 
-
-#endif
+    return p;
+}

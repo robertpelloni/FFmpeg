@@ -714,6 +714,7 @@ static int vk_hevc_start_frame(AVCodecContext          *avctx,
     int err;
     HEVCContext *h = avctx->priv_data;
     HEVCLayerContext *l = &h->layers[h->cur_layer];
+
     HEVCFrame *pic = h->cur_frame;
     FFVulkanDecodeContext *dec = avctx->internal->hwaccel_priv_data;
     HEVCVulkanDecodePicture *hp = pic->hwaccel_picture_private;
@@ -721,12 +722,6 @@ static int vk_hevc_start_frame(AVCodecContext          *avctx,
     const HEVCPPS *pps = h->pps;
     const HEVCSPS *sps = pps->sps;
     int nb_refs = 0;
-
-    if (!dec->session_params) {
-        err = vk_hevc_create_params(avctx, &dec->session_params);
-        if (err < 0)
-            return err;
-    }
 
     hp->h265pic = (StdVideoDecodeH265PictureInfo) {
         .flags = (StdVideoDecodeH265PictureInfoFlags) {
@@ -891,7 +886,7 @@ static int vk_hevc_end_frame(AVCodecContext *avctx)
         rvp[i] = &rfhp->vp;
     }
 
-    av_log(avctx, AV_LOG_VERBOSE, "Decoding frame, %"SIZE_SPECIFIER" bytes, %i slices\n",
+    av_log(avctx, AV_LOG_DEBUG, "Decoding frame, %"SIZE_SPECIFIER" bytes, %i slices\n",
            vp->slices_size, hp->h265_pic_info.sliceSegmentCount);
 
     return ff_vk_decode_frame(avctx, pic->f, vp, rav, rvp);

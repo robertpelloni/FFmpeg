@@ -515,16 +515,21 @@ typedef struct AVCodecContext {
     int flags2;
 
     /**
-     * some codecs need / can use extradata like Huffman tables.
-     * MJPEG: Huffman tables
-     * rv10: additional flags
-     * MPEG-4: global headers (they can be in the bitstream or here)
-     * The allocated memory should be AV_INPUT_BUFFER_PADDING_SIZE bytes larger
-     * than extradata_size to avoid problems if it is read with the bitstream reader.
-     * The bytewise contents of extradata must not depend on the architecture or CPU endianness.
-     * Must be allocated with the av_malloc() family of functions.
-     * - encoding: Set/allocated/freed by libavcodec.
-     * - decoding: Set/allocated/freed by user.
+     * Out-of-band global headers that may be used by some codecs.
+     *
+     * - decoding: Should be set by the caller when available (typically from a
+     *   demuxer) before opening the decoder; some decoders require this to be
+     *   set and will fail to initialize otherwise.
+     *
+     *   The array must be allocated with the av_malloc() family of functions;
+     *   allocated size must be at least AV_INPUT_BUFFER_PADDING_SIZE bytes
+     *   larger than extradata_size.
+     *
+     * - encoding: May be set by the encoder in avcodec_open2() (possibly
+     *   depending on whether the AV_CODEC_FLAG_GLOBAL_HEADER flag is set).
+     *
+     * After being set, the array is owned by the codec and freed in
+     * avcodec_free_context().
      */
     uint8_t *extradata;
     int extradata_size;
@@ -1895,8 +1900,13 @@ typedef struct AVCodecContext {
      * For SUBTITLE_ASS subtitle type, it should contain the whole ASS
      * [Script Info] and [V4+ Styles] section, plus the [Events] line and
      * the Format line following. It shouldn't include any Dialogue line.
-     * - encoding: Set/allocated/freed by user (before avcodec_open2())
-     * - decoding: Set/allocated/freed by libavcodec (by avcodec_open2())
+     *
+     * - encoding: May be set by the caller before avcodec_open2() to an array
+     *   allocated with the av_malloc() family of functions.
+     * - decoding: May be set by libavcodec in avcodec_open2().
+     *
+     * After being set, the array is owned by the codec and freed in
+     * avcodec_free_context().
      */
     int subtitle_header_size;
     uint8_t *subtitle_header;
@@ -3116,8 +3126,8 @@ void av_fast_padded_malloc(void *ptr, unsigned int *size, size_t min_size);
 void av_fast_padded_mallocz(void *ptr, unsigned int *size, size_t min_size);
 
 /**
- * @return a positive value if s is open (i.e. avcodec_open2() was called on it
- * with no corresponding avcodec_close()), 0 otherwise.
+ * @return a positive value if s is open (i.e. avcodec_open2() was called on it),
+ * 0 otherwise.
  */
 int avcodec_is_open(AVCodecContext *s);
 

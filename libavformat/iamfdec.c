@@ -113,6 +113,21 @@ static int iamf_read_header(AVFormatContext *s)
                 st->disposition |= AV_DISPOSITION_DEPENDENT;
             st->id = substream->audio_substream_id;
             avpriv_set_pts_info(st, 64, 1, st->codecpar->sample_rate);
+
+            k += 1 + (coupled_substream_count-- > 0);
+        }
+
+        // Swap back and side stream ids as our native channel layout ordering doen't match the
+        // order from ITU-R - BS.2051-3 for Systems I and J (where side channels come before back ones).
+        if (back_substream_id >= 0 && side_substream_id >= 0 && av_channel_layout_compare(&layer->ch_layout,
+                                                                &(AVChannelLayout)AV_CHANNEL_LAYOUT_9POINT1POINT6)) {
+            const IAMFSubStream *back_substream = &audio_element->substreams[back_substream_id];
+            const IAMFSubStream *side_substream = &audio_element->substreams[side_substream_id];
+            AVStream *back_st = stg->streams[back_substream_id];
+            AVStream *side_st = stg->streams[side_substream_id];
+
+            back_st->id = side_substream->audio_substream_id;
+            side_st->id = back_substream->audio_substream_id;
         }
     }
 

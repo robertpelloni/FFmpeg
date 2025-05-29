@@ -32,7 +32,233 @@
 
 #include "libavutil/opt.h"
 #include "mpegvideo.h"
+#include "mpegvideoencdsp.h"
+#include "pixblockdsp.h"
+#include "put_bits.h"
+#include "ratecontrol.h"
 
+#define MPVENC_MAX_B_FRAMES 16
+
+typedef struct MPVEncContext {
+    MpegEncContext c;           ///< the common base context
+
+    /** bit output */
+    PutBitContext pb;
+
+    unsigned int lambda;        ///< Lagrange multiplier used in rate distortion
+    unsigned int lambda2;       ///< (lambda*lambda) >> FF_LAMBDA_SHIFT
+    int *lambda_table;
+    int adaptive_quant;         ///< use adaptive quantization
+    int dquant;                 ///< qscale difference to prev qscale
+    int skipdct;                ///< skip dct and code zero residual
+
+    int quantizer_noise_shaping;
+
+    int luma_elim_threshold;
+    int chroma_elim_threshold;
+
+    int mpv_flags;              ///< flags set by private options
+    /// Bitfield containing information which frames to reconstruct.
+    int frame_reconstruction_bitfield;
+
+    /**
+     * Reference to the source picture.
+     */
+    AVFrame *new_pic;
+
+    struct MPVMainEncContext *parent;
+
+    FDCTDSPContext fdsp;
+    MpegvideoEncDSPContext mpvencdsp;
+    PixblockDSPContext pdsp;
+    MotionEstContext me;
+
+    int f_code;                 ///< forward MV resolution
+    int b_code;                 ///< backward MV resolution for B-frames
+
+    int16_t (*p_mv_table)[2];            ///< MV table (1MV per MB) P-frame
+    int16_t (*b_forw_mv_table)[2];       ///< MV table (1MV per MB) forward mode B-frame
+    int16_t (*b_back_mv_table)[2];       ///< MV table (1MV per MB) backward mode B-frame
+    int16_t (*b_bidir_forw_mv_table)[2]; ///< MV table (1MV per MB) bidir mode B-frame
+    int16_t (*b_bidir_back_mv_table)[2]; ///< MV table (1MV per MB) bidir mode B-frame
+    int16_t (*b_direct_mv_table)[2];     ///< MV table (1MV per MB) direct mode B-frame
+    int16_t (*b_field_mv_table[2][2][2])[2];///< MV table (4MV per MB) interlaced B-frame
+    uint8_t (*p_field_select_table[2]);  ///< Only the first element is allocated
+    uint8_t (*b_field_select_table[2][2]); ///< allocated jointly with p_field_select_table
+
+    uint16_t *mb_type;          ///< Table for candidate MB types
+    uint16_t *mb_var;           ///< Table for MB variances
+    uint16_t *mc_mb_var;        ///< Table for motion compensated MB variances
+    uint8_t  *mb_mean;          ///< Table for MB luminance
+    uint64_t encoding_error[MPV_MAX_PLANES];
+
+    int intra_quant_bias;    ///< bias for the quantizer
+    int inter_quant_bias;    ///< bias for the quantizer
+    int min_qcoeff;          ///< minimum encodable coefficient
+    int max_qcoeff;          ///< maximum encodable coefficient
+    int ac_esc_length;       ///< num of bits needed to encode the longest esc
+    const uint8_t *intra_ac_vlc_length;
+    const uint8_t *intra_ac_vlc_last_length;
+    const uint8_t *intra_chroma_ac_vlc_length;
+    const uint8_t *intra_chroma_ac_vlc_last_length;
+    const uint8_t *inter_ac_vlc_length;
+    const uint8_t *inter_ac_vlc_last_length;
+    const uint8_t *luma_dc_vlc_length;
+
+    int coded_score[12];
+
+    /** precomputed matrix (combine qscale and DCT renorm) */
+    int (*q_intra_matrix)[64];
+    int (*q_chroma_intra_matrix)[64];
+    int (*q_inter_matrix)[64];
+    /** identical to the above but for MMX & these are not permutated, second 64 entries are bias*/
+    uint16_t (*q_intra_matrix16)[2][64];
+    uint16_t (*q_chroma_intra_matrix16)[2][64];
+    uint16_t (*q_inter_matrix16)[2][64];
+
+    /* noise reduction */
+    void (*denoise_dct)(struct MPVEncContext *s, int16_t *block);
+    int (*dct_error_sum)[64];
+    int dct_count[2];
+    uint16_t (*dct_offset)[64];
+
+    /* statistics, used for 2-pass encoding */
+    int mv_bits;
+    int i_tex_bits;
+    int p_tex_bits;
+    int i_count;
+    int misc_bits; ///< cbp, mb_type
+    int last_bits; ///< temp var used for calculating the above vars
+
+    /* H.263 specific */
+    int mb_info;                   ///< interval for outputting info about mb offsets as side data
+    int prev_mb_info, last_mb_info;
+    int mb_info_size;
+    uint8_t *mb_info_ptr;
+
+    /* MJPEG specific */
+    struct MJpegContext *mjpeg_ctx;
+    int esc_pos;
+
+    /* MPEG-1 specific */
+    int last_mv_dir;               ///< last mv_dir, used for B-frame encoding
+
+    /* MPEG-4 specific */
+    int mpeg_quant;
+    PutBitContext tex_pb;          ///< used for data partitioned VOPs
+    PutBitContext pb2;             ///< used for data partitioned VOPs
+
+    /* MSMPEG4 specific */
+    int esc3_level_length;
+
+    /* RTP specific */
+    int rtp_mode;
+    int rtp_payload_size;
+    int error_rate;
+
+    uint8_t *ptr_lastgob;
+
+    void (*encode_mb)(struct MPVEncContext *s, int16_t block[][64],
+                      int motion_x, int motion_y);
+
+    int (*dct_quantize)(struct MPVEncContext *s, int16_t *block/*align 16*/, int n, int qscale, int *overflow);
+
+    me_cmp_func ildct_cmp[2]; ///< 0 = intra, 1 = non-intra
+    me_cmp_func n_sse_cmp[2]; ///< either SSE or NSSE cmp func
+    me_cmp_func sad_cmp[2];
+    me_cmp_func sse_cmp[2];
+    int (*sum_abs_dctelem)(const int16_t *block);
+
+    int intra_penalty;
+} MPVEncContext;
+
+typedef struct MPVMainEncContext {
+    MPVEncContext s;               ///< The main slicecontext
+
+    int intra_only;                ///< if true, only intra pictures are generated
+    int gop_size;
+    int max_b_frames;              ///< max number of B-frames
+    int picture_in_gop_number;     ///< 0-> first pic in gop, ...
+    int input_picture_number;      ///< used to set pic->display_picture_number
+    int coded_picture_number;      ///< used to set pic->coded_picture_number
+
+    MPVPicture *input_picture[MPVENC_MAX_B_FRAMES + 1]; ///< next pictures in display order
+    MPVPicture *reordered_input_picture[MPVENC_MAX_B_FRAMES + 1]; ///< next pictures in coded order
+
+    int64_t user_specified_pts;    ///< last non-zero pts from user-supplied AVFrame
+    /**
+     * pts difference between the first and second input frame, used for
+     * calculating dts of the first frame when there's a delay */
+    int64_t dts_delta;
+    /**
+     * reordered pts to be used as dts for the next output frame when there's
+     * a delay */
+    int64_t reordered_pts;
+
+    /// temporary frames used by b_frame_strategy = 2
+    AVFrame *tmp_frames[MPVENC_MAX_B_FRAMES + 2];
+    int b_frame_strategy;
+    int b_sensitivity;
+    int brd_scale;
+
+    int scenechange_threshold;
+
+    int noise_reduction;
+
+    float border_masking;
+    int lmin, lmax;
+    int vbv_ignore_qmax;
+
+    /* MPEG-1/2 specific */
+    int vbv_delay_pos;             ///< offset of vbv_delay in the bitstream
+
+    const uint8_t *fcode_tab;      ///< smallest fcode needed for each MV
+
+    /* frame skip options */
+    int frame_skip_threshold;
+    int frame_skip_factor;
+    int frame_skip_exp;
+    int frame_skip_cmp;
+    me_cmp_func frame_skip_cmp_fn;
+
+    int (*encode_picture_header)(struct MPVMainEncContext *m);
+
+    /* bit rate control */
+    int64_t bit_rate;
+    int64_t total_bits;
+    int frame_bits;                ///< bits used for the current frame
+    int header_bits;
+    int stuffing_bits;             ///< bits used for stuffing
+    int next_lambda;               ///< next lambda used for retrying to encode a frame
+    int fixed_qscale;              ///< fixed qscale if non zero
+    int last_lambda_for[5];        ///< last lambda for a specific pict type
+    int last_pict_type;            //FIXME removes
+    int last_non_b_pict_type;      ///< used for MPEG-4 gmc B-frames & ratecontrol
+    RateControlContext rc_context; ///< contains stuff only accessed in ratecontrol.c
+
+    int me_penalty_compensation;
+    int me_pre;                          ///< prepass for motion estimation
+
+    int64_t mb_var_sum;            ///< sum of MB variance for current frame
+    int64_t mc_mb_var_sum;         ///< motion compensated MB variance for current frame
+
+    char *me_map_base;             ///< backs MotionEstContext.(map|score_map)
+    char *dct_error_sum_base;      ///< backs dct_error_sum
+    int16_t (*mv_table_base)[2];
+} MPVMainEncContext;
+
+static inline const MPVMainEncContext *slice_to_mainenc(const MPVEncContext *s)
+{
+#ifdef NO_SLICE_THREADING_HERE
+    av_assert2(s->c.slice_context_count <= 1 &&
+               !(s->c.avctx->codec->capabilities & AV_CODEC_CAP_SLICE_THREADS));
+    return (const MPVMainEncContext*)s;
+#else
+    return s->parent;
+#endif
+}
+
+#define MAX_FCODE        7
 #define UNI_AC_ENC_INDEX(run,level) ((run)*128 + (level))
 #define INPLACE_OFFSET 16
 

@@ -490,10 +490,12 @@ static int iff_read_header(AVFormatContext *s)
             st->codecpar->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
             st->codecpar->ch_layout.nb_channels = avio_rb16(pb);
             iff->maud_compression = avio_rb16(pb);
-            if (st->codecpar->ch_layout.nb_channels == 1)
-                st->codecpar->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
-            else if (st->codecpar->ch_layout.nb_channels == 2)
-                st->codecpar->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
+            if (sta->codecpar->ch_layout.nb_channels == 1)
+                sta->codecpar->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_MONO;
+            else if (sta->codecpar->ch_layout.nb_channels == 2)
+                sta->codecpar->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
+            else if (sta->codecpar->ch_layout.nb_channels == 0)
+                return AVERROR_INVALIDDATA;
             break;
 
         case ID_ABIT:

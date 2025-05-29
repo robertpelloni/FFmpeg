@@ -30,6 +30,43 @@
 #include "put_bits.h"
 #include "refstruct.h"
 
+#ifndef CBS_READ
+#define CBS_READ 1
+#endif
+#ifndef CBS_WRITE
+#define CBS_WRITE 1
+#endif
+#ifndef CBS_TRACE
+#define CBS_TRACE 1
+#endif
+
+#ifndef CBS_APV
+#define CBS_APV CONFIG_CBS_APV
+#endif
+#ifndef CBS_AV1
+#define CBS_AV1 CONFIG_CBS_AV1
+#endif
+#ifndef CBS_H264
+#define CBS_H264 CONFIG_CBS_H264
+#endif
+#ifndef CBS_H265
+#define CBS_H265 CONFIG_CBS_H265
+#endif
+#ifndef CBS_H266
+#define CBS_H266 CONFIG_CBS_H266
+#endif
+#ifndef CBS_JPEG
+#define CBS_JPEG CONFIG_CBS_JPEG
+#endif
+#ifndef CBS_MPEG2
+#define CBS_MPEG2 CONFIG_CBS_MPEG2
+#endif
+#ifndef CBS_VP8
+#define CBS_VP8 CONFIG_CBS_VP8
+#endif
+#ifndef CBS_VP9
+#define CBS_VP9 CONFIG_CBS_VP9
+#endif
 
 enum CBSContentType {
     // Unit content may contain some references to other structures, but all
@@ -335,14 +372,15 @@ int ff_cbs_write_signed(CodedBitstreamContext *ctx, PutBitContext *pbc,
 #define CBS_UNIT_TYPE_END_OF_LIST { .nb_unit_types = 0 }
 
 
-extern const CodedBitstreamType ff_cbs_type_av1;
-extern const CodedBitstreamType ff_cbs_type_h264;
-extern const CodedBitstreamType ff_cbs_type_h265;
-extern const CodedBitstreamType ff_cbs_type_h266;
-extern const CodedBitstreamType ff_cbs_type_jpeg;
-extern const CodedBitstreamType ff_cbs_type_mpeg2;
-extern const CodedBitstreamType ff_cbs_type_vp8;
-extern const CodedBitstreamType ff_cbs_type_vp9;
+extern const CodedBitstreamType CBS_FUNC(type_apv);
+extern const CodedBitstreamType CBS_FUNC(type_av1);
+extern const CodedBitstreamType CBS_FUNC(type_h264);
+extern const CodedBitstreamType CBS_FUNC(type_h265);
+extern const CodedBitstreamType CBS_FUNC(type_h266);
+extern const CodedBitstreamType CBS_FUNC(type_jpeg);
+extern const CodedBitstreamType CBS_FUNC(type_mpeg2);
+extern const CodedBitstreamType CBS_FUNC(type_vp8);
+extern const CodedBitstreamType CBS_FUNC(type_vp9);
 
 
 #endif /* AVCODEC_CBS_INTERNAL_H */

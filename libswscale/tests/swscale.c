@@ -68,6 +68,57 @@ const struct mode modes[] = {
 static FFSFC64 prng_state;
 static SwsContext *sws[3]; /* reused between tests for efficiency */
 
+static double speedup_logavg;
+static double speedup_min = 1e10;
+static double speedup_max = 0;
+static int speedup_count;
+
+static const char *speedup_color(double ratio)
+{
+    return ratio > 10.00 ? "\033[1;94m" : /* bold blue */
+           ratio >  2.00 ? "\033[1;32m" : /* bold green */
+           ratio >  1.02 ? "\033[32m"   : /* green */
+           ratio >  0.98 ? ""           : /* default */
+           ratio >  0.90 ? "\033[33m"   : /* yellow */
+           ratio >  0.75 ? "\033[31m"   : /* red */
+            "\033[1;31m";  /* bold red */
+}
+
+static void exit_handler(int sig)
+{
+    if (speedup_count) {
+        double ratio = exp(speedup_logavg / speedup_count);
+        printf("Overall speedup=%.3fx %s%s\033[0m, min=%.3fx max=%.3fx\n", ratio,
+               speedup_color(ratio), ratio >= 1.0 ? "faster" : "slower",
+               speedup_min, speedup_max);
+    }
+
+    exit(sig);
+}
+
+/* Estimate luma variance assuming uniform dither noise distribution */
+static float estimate_quantization_noise(enum AVPixelFormat fmt)
+{
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(fmt);
+    float variance = 1.0 / 12;
+    if (desc->comp[0].depth < 8) {
+        /* Extra headroom for very low bit depth output */
+        variance *= (8 - desc->comp[0].depth);
+    }
+
+    if (desc->flags & AV_PIX_FMT_FLAG_FLOAT) {
+        return 0.0;
+    } else if (desc->flags & AV_PIX_FMT_FLAG_RGB) {
+        const float r = 0.299 / (1 << desc->comp[0].depth);
+        const float g = 0.587 / (1 << desc->comp[1].depth);
+        const float b = 0.114 / (1 << desc->comp[2].depth);
+        return (r * r + g * g + b * b) * variance;
+    } else {
+        const float y = 1.0 / (1 << desc->comp[0].depth);
+        return y * y * variance;
+    }
+}
+
 static int fmt_comps(enum AVPixelFormat fmt)
 {
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(fmt);

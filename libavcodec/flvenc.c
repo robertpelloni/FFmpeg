@@ -24,12 +24,13 @@
 #include "mpegvideo.h"
 #include "mpegvideodata.h"
 #include "mpegvideoenc.h"
+#include "put_bits.h"
 
 void ff_flv_encode_picture_header(MpegEncContext *s)
 {
     int format;
 
-    align_put_bits(&s->pb);
+    put_bits_assume_flushed(&s->pb);
 
     put_bits(&s->pb, 17, 1);
     /* 0: H.263 escape codes 1: 11-bit escape codes */

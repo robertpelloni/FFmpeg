@@ -50,8 +50,8 @@ void ff_write_pass1_stats(MpegEncContext *s)
              s->misc_bits,
              s->f_code,
              s->b_code,
-             s->mc_mb_var_sum,
-             s->mb_var_sum,
+             m->mc_mb_var_sum,
+             m->mb_var_sum,
              s->i_count,
              s->header_bits);
 }
@@ -689,9 +689,18 @@ av_cold int ff_rate_control_init(MpegEncContext *s)
                 get_qscale(s, &rce, rcc->pass1_wanted_bits / rcc->pass1_rc_eq_output_sum, i);
 
                 // FIXME misbehaves a little for variable fps
-                rcc->pass1_wanted_bits += s->bit_rate / get_fps(s->avctx);
+                rcc->pass1_wanted_bits += m->bit_rate / get_fps(avctx);
             }
         }
+    }
+
+    if (s->adaptive_quant) {
+        unsigned mb_array_size = s->c.mb_stride * s->c.mb_height;
+
+        rcc->cplx_tab = av_malloc_array(mb_array_size, 2 * sizeof(*rcc->cplx_tab));
+        if (!rcc->cplx_tab)
+            return AVERROR(ENOMEM);
+        rcc->bits_tab = rcc->cplx_tab + mb_array_size;
     }
 
     return 0;

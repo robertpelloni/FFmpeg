@@ -34,8 +34,13 @@
 #include "put_bits.h"
 #include "rv10enc.h"
 
-void ff_rv20_encode_picture_header(MpegEncContext *s) {
-    put_bits(&s->pb, 2, s->pict_type); //I 0 vs. 1 ?
+int ff_rv20_encode_picture_header(MPVMainEncContext *const m)
+{
+    MPVEncContext *const s = &m->s;
+
+    put_bits_assume_flushed(&s->pb);
+
+    put_bits(&s->pb, 2, s->c.pict_type); //I 0 vs. 1 ?
     put_bits(&s->pb, 1, 0);     /* unknown bit */
     put_bits(&s->pb, 5, s->qscale);
 
@@ -45,12 +50,12 @@ void ff_rv20_encode_picture_header(MpegEncContext *s) {
 
     put_bits(&s->pb, 1, s->no_rounding);
 
-    av_assert0(s->f_code == 1);
-    av_assert0(s->unrestricted_mv == 0);
-    av_assert0(s->alt_inter_vlc == 0);
-    av_assert0(s->umvplus == 0);
-    av_assert0(s->modified_quant==1);
-    av_assert0(s->loop_filter==1);
+    av_assert1(s->f_code == 1);
+    av_assert1(!s->c.unrestricted_mv);
+    av_assert1(!s->c.alt_inter_vlc);
+    av_assert1(!s->c.umvplus);
+    av_assert1(s->c.modified_quant == 1);
+    av_assert1(s->c.loop_filter == 1);
 
     s->h263_aic= s->pict_type == AV_PICTURE_TYPE_I;
     if(s->h263_aic){

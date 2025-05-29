@@ -446,7 +446,7 @@ static int encode_q_branch(SnowEncContext *enc, int level, int x, int y)
     c->penalty_factor    = get_penalty_factor(enc->lambda, enc->lambda2, c->avctx->me_cmp);
     c->sub_penalty_factor= get_penalty_factor(enc->lambda, enc->lambda2, c->avctx->me_sub_cmp);
     c->mb_penalty_factor = get_penalty_factor(enc->lambda, enc->lambda2, c->avctx->mb_cmp);
-    c->current_mv_penalty = c->mv_penalty[enc->m.f_code=1] + MAX_DMV;
+    c->current_mv_penalty = c->mv_penalty[enc->m.s.f_code=1] + MAX_DMV;
 
     c->xmin = - x*block_w - 16+3;
     c->ymin = - y*block_w - 16+3;
@@ -1854,18 +1854,17 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         mpv->last_pic.ptr    = &enc->last_pic;
         mpv->last_pic.ptr->f = s->last_picture[0];
         mpv-> new_pic     = s->input_picture;
-        mpv->linesize   = stride;
-        mpv->uvlinesize = s->current_picture->linesize[1];
-        mpv->width      = width;
-        mpv->height     = height;
-        mpv->mb_width   = block_width;
-        mpv->mb_height  = block_height;
-        mpv->mb_stride  =     mpv->mb_width + 1;
-        mpv->b8_stride  = 2 * mpv->mb_width + 1;
-        mpv->f_code     = 1;
-        mpv->pict_type  = pic->pict_type;
-        mpv->motion_est = enc->motion_est;
-        mpv->me.scene_change_score = 0;
+        mpv->c.linesize   = stride;
+        mpv->c.uvlinesize = s->current_picture->linesize[1];
+        mpv->c.width      = width;
+        mpv->c.height     = height;
+        mpv->c.mb_width   = block_width;
+        mpv->c.mb_height  = block_height;
+        mpv->c.mb_stride  =     mpv->c.mb_width + 1;
+        mpv->c.b8_stride  = 2 * mpv->c.mb_width + 1;
+        mpv->f_code       = 1;
+        mpv->c.pict_type  = pic->pict_type;
+        mpv->me.motion_est = enc->motion_est;
         mpv->me.dia_size = avctx->dia_size;
         mpv->quarter_sample  = (s->avctx->flags & AV_CODEC_FLAG_QPEL)!=0;
         mpv->out_format      = FMT_H263;

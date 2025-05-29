@@ -33,8 +33,11 @@
 
 
 static const CodedBitstreamType *const cbs_type_table[] = {
-#if CONFIG_CBS_AV1
-    &ff_cbs_type_av1,
+#if CBS_APV
+    &CBS_FUNC(type_apv),
+#endif
+#if CBS_AV1
+    &CBS_FUNC(type_av1),
 #endif
 #if CONFIG_CBS_H264
     &ff_cbs_type_h264,
@@ -59,8 +62,11 @@ static const CodedBitstreamType *const cbs_type_table[] = {
 #endif
 };
 
-const enum AVCodecID ff_cbs_all_codec_ids[] = {
-#if CONFIG_CBS_AV1
+const enum AVCodecID CBS_FUNC(all_codec_ids)[] = {
+#if CBS_APV
+    AV_CODEC_ID_APV,
+#endif
+#if CBS_AV1
     AV_CODEC_ID_AV1,
 #endif
 #if CONFIG_CBS_H264
@@ -256,7 +262,7 @@ static int cbs_fill_fragment_data(CodedBitstreamFragment *frag,
 
 static int cbs_read_data(CodedBitstreamContext *ctx,
                          CodedBitstreamFragment *frag,
-                         AVBufferRef *buf,
+                         const AVBufferRef *buf,
                          const uint8_t *data, size_t size,
                          int header)
 {
@@ -324,9 +330,10 @@ int ff_cbs_read_packet_side_data(CodedBitstreamContext *ctx,
 
 int ff_cbs_read(CodedBitstreamContext *ctx,
                 CodedBitstreamFragment *frag,
+                const AVBufferRef *buf,
                 const uint8_t *data, size_t size)
 {
-    return cbs_read_data(ctx, frag, NULL,
+    return cbs_read_data(ctx, frag, buf,
                          data, size, 0);
 }
 
@@ -663,10 +670,7 @@ int ff_cbs_write_unsigned(CodedBitstreamContext *ctx, PutBitContext *pbc,
     if (put_bits_left(pbc) < width)
         return AVERROR(ENOSPC);
 
-    if (width < 32)
-        put_bits(pbc, width, value);
-    else
-        put_bits32(pbc, value);
+    put_bits63(pbc, width, value);
 
     CBS_TRACE_WRITE_END();
 
@@ -731,10 +735,7 @@ int ff_cbs_write_signed(CodedBitstreamContext *ctx, PutBitContext *pbc,
     if (put_bits_left(pbc) < width)
         return AVERROR(ENOSPC);
 
-    if (width < 32)
-        put_sbits(pbc, width, value);
-    else
-        put_bits32(pbc, value);
+    put_bits63(pbc, width, zero_extend(value, width));
 
     CBS_TRACE_WRITE_END();
 
@@ -766,14 +767,12 @@ static int cbs_insert_unit(CodedBitstreamFragment *frag,
         if (position < frag->nb_units)
             memcpy(units + position + 1, frag->units + position,
                    (frag->nb_units - position) * sizeof(*units));
-    }
 
-    memset(units + position, 0, sizeof(*units));
-
-    if (units != frag->units) {
         av_free(frag->units);
         frag->units = units;
     }
+
+    memset(units + position, 0, sizeof(*units));
 
     ++frag->nb_units;
 

@@ -138,6 +138,23 @@ static AVFrame *vk_get_dpb_pool(FFVulkanDecodeShared *ctx)
     return avf;
 }
 
+static void init_frame(FFVulkanDecodeContext *dec, FFVulkanDecodePicture *vkpic)
+{
+    FFVulkanDecodeShared *ctx = dec->shared_ctx;
+    FFVulkanFunctions *vk = &ctx->s.vkfn;
+
+    vkpic->dpb_frame     = NULL;
+    for (int i = 0; i < AV_NUM_DATA_POINTERS; i++) {
+        vkpic->view.ref[i]  = VK_NULL_HANDLE;
+        vkpic->view.out[i]  = VK_NULL_HANDLE;
+        vkpic->view.dst[i]  = VK_NULL_HANDLE;
+    }
+
+    vkpic->destroy_image_view = vk->DestroyImageView;
+    vkpic->wait_semaphores = vk->WaitSemaphores;
+    vkpic->invalidate_memory_ranges = vk->InvalidateMappedMemoryRanges;
+}
+
 int ff_vk_decode_prepare_frame(FFVulkanDecodeContext *dec, AVFrame *pic,
                                FFVulkanDecodePicture *vkpic, int is_current,
                                int alloc_dpb)
@@ -1009,17 +1026,18 @@ int ff_vk_frame_params(AVCodecContext *avctx, AVBufferRef *hw_frames_ctx)
     hwfc->format[0]    = vkfmt;
     hwfc->create_pnext = &prof->profile_list;
     hwfc->tiling       = VK_IMAGE_TILING_OPTIMAL;
-    hwfc->usage        = VK_IMAGE_USAGE_TRANSFER_SRC_BIT         |
-                         VK_IMAGE_USAGE_SAMPLED_BIT              |
-                         VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
+    hwfc->usage        = VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                         VK_IMAGE_USAGE_STORAGE_BIT      |
+                         VK_IMAGE_USAGE_SAMPLED_BIT;
 
     if (!dec->dedicated_dpb)
         hwfc->usage |= VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
 
-    ctx = dec->shared_ctx;
-    if (ctx->s.extensions & (FF_VK_EXT_VIDEO_ENCODE_QUEUE |
-                             FF_VK_EXT_VIDEO_MAINTENANCE_1))
-        hwfc->usage |= VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR;
+        ctx = dec->shared_ctx;
+        if (ctx->s.extensions & (FF_VK_EXT_VIDEO_ENCODE_QUEUE |
+                                 FF_VK_EXT_VIDEO_MAINTENANCE_1))
+            hwfc->usage |= VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR;
+    }
 
     return err;
 }

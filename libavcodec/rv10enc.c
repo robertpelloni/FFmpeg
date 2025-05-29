@@ -35,7 +35,7 @@ int ff_rv10_encode_picture_header(MpegEncContext *s)
 {
     int full_frame= 0;
 
-    align_put_bits(&s->pb);
+    put_bits_assume_flushed(&s->pb);
 
     put_bits(&s->pb, 1, 1);     /* marker */
 

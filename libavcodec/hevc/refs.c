@@ -29,7 +29,8 @@
 #include "hevc.h"
 #include "hevcdec.h"
 #include "progressframe.h"
-#include "refstruct.h"
+#include "thread.h"
+#include "libavutil/refstruct.h"
 
 void ff_hevc_unref_frame(HEVCFrame *frame, int flags)
 {
@@ -130,10 +131,9 @@ static HEVCFrame *alloc_frame(HEVCContext *s, HEVCLayerContext *l)
             }
         }
 
-        ret = ff_progress_frame_get_buffer(s->avctx, &frame->tf,
-                                           AV_GET_BUFFER_FLAG_REF);
+        ret = ff_thread_get_buffer(s->avctx, frame->f, AV_GET_BUFFER_FLAG_REF);
         if (ret < 0)
-            return NULL;
+            goto fail;
 
         frame->rpl = ff_refstruct_allocz(s->pkt.nb_nals * sizeof(*frame->rpl));
         if (!frame->rpl)

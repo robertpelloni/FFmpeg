@@ -35,6 +35,7 @@
 #include "h261.h"
 #include "h261enc.h"
 #include "mpegvideoenc.h"
+#include "put_bits.h"
 
 #define H261_MAX_RUN   26
 #define H261_MAX_LEVEL 15
@@ -65,7 +66,7 @@ void ff_h261_encode_picture_header(MpegEncContext *s)
     H261EncContext *const h = (H261EncContext *)s;
     int temp_ref;
 
-    align_put_bits(&s->pb);
+    put_bits_assume_flushed(&s->pb);
 
     /* Update the pointer to last GOB */
     s->ptr_lastgob = put_bits_ptr(&s->pb);

@@ -6417,6 +6417,11 @@ static int mov_read_elst(MOVContext *c, AVIOContext *pb, MOVAtom atom)
                    c->fc->nb_streams-1, i, e->time);
             return AVERROR_INVALIDDATA;
         }
+        if (e->duration < 0) {
+            av_log(c->fc, AV_LOG_ERROR, "Track %d, edit %d: Invalid edit list duration=%"PRId64"\n",
+                   c->fc->nb_streams-1, i, e->duration);
+            return AVERROR_INVALIDDATA;
+        }
     }
     sc->elst_count = i;
 
@@ -10768,7 +10773,7 @@ static AVIndexEntry *mov_find_next_sample(AVFormatContext *s, AVStream **st)
                 ((s->pb->seekable & AVIO_SEEKABLE_NORMAL) &&
                  ((msc->pb != s->pb && dts < best_dts) || (msc->pb == s->pb && dts != AV_NOPTS_VALUE &&
                  ((dtsdiff <= AV_TIME_BASE && current_sample->pos < sample->pos) ||
-                  (dtsdiff > AV_TIME_BASE && dts < best_dts)))))) {
+                  (dtsdiff > AV_TIME_BASE && dts < best_dts && mov->interleaved_read)))))) {
                 sample = current_sample;
                 best_dts = dts;
                 *st = avst;

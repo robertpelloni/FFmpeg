@@ -34,6 +34,7 @@
 #include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
+#include "avio_internal.h"
 #include "demux.h"
 #include "internal.h"
 
@@ -149,9 +150,9 @@ static int read_packet(AVFormatContext *s,
 
     while(1) {
 
-        if (avio_read(pb, preamble, MM_PREAMBLE_SIZE) != MM_PREAMBLE_SIZE) {
-            return AVERROR(EIO);
-        }
+        ret = ffio_read_size(pb, preamble, MM_PREAMBLE_SIZE);
+        if (ret < 0)
+            return ret;
 
         type = AV_RL16(&preamble[0]);
         length = AV_RL16(&preamble[2]);
@@ -169,8 +170,9 @@ static int read_packet(AVFormatContext *s,
             if ((ret = av_new_packet(pkt, length + MM_PREAMBLE_SIZE)) < 0)
                 return ret;
             memcpy(pkt->data, preamble, MM_PREAMBLE_SIZE);
-            if (avio_read(pb, pkt->data + MM_PREAMBLE_SIZE, length) != length)
-                return AVERROR(EIO);
+            ret = ffio_read_size(pb, pkt->data + MM_PREAMBLE_SIZE, length);
+            if (ret < 0)
+                return ret;
             pkt->size = length + MM_PREAMBLE_SIZE;
             pkt->stream_index = 0;
             pkt->pts = mm->video_pts;

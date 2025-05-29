@@ -102,7 +102,6 @@ typedef struct MpegEncContext {
     int pb_frame;     ///< PB-frame mode (0 = none, 1 = base, 2 = improved)
 
 /* the following codec id fields are deprecated in favor of codec_id */
-    int h263_plus;    ///< H.263+ headers
     int h263_flv;     ///< use flv H.263 header
 
     enum AVCodecID codec_id;     /* see AV_CODEC_ID_xxx */
@@ -225,14 +224,6 @@ typedef struct MpegEncContext {
     QpelDSPContext qdsp;
     VideoDSPContext vdsp;
     H263DSPContext h263dsp;
-    int f_code;                 ///< forward MV resolution
-    int b_code;                 ///< backward MV resolution for B-frames (MPEG-4)
-    int16_t (*p_mv_table_base)[2];
-    int16_t (*b_forw_mv_table_base)[2];
-    int16_t (*b_back_mv_table_base)[2];
-    int16_t (*b_bidir_forw_mv_table_base)[2];
-    int16_t (*b_bidir_back_mv_table_base)[2];
-    int16_t (*b_direct_mv_table_base)[2];
     int16_t (*p_field_mv_table_base)[2];
     int16_t (*b_field_mv_table_base)[2];
     int16_t (*p_mv_table)[2];            ///< MV table (1MV per MB) P-frame encoding
@@ -388,9 +379,6 @@ typedef struct MpegEncContext {
     int data_partitioning;           ///< data partitioning flag from header
     int partitioned_frame;           ///< is current frame partitioned
     int low_delay;                   ///< no reordering needed / has no B-frames
-    PutBitContext tex_pb;            ///< used for data partitioned VOPs
-    PutBitContext pb2;               ///< used for data partitioned VOPs
-    int mpeg_quant;
     int padding_bug_score;             ///< used to detect the VERY common padding bug in MPEG-4
 
     /* divx specific, used to workaround (many) bugs in divx5 */

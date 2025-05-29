@@ -25,6 +25,7 @@
 #include "libavcodec/bytestream.h"
 #include "libavcodec/flac.h"
 #include "avformat.h"
+#include "avio_internal.h"
 #include "demux.h"
 #include "flac_picture.h"
 #include "internal.h"
@@ -95,8 +96,9 @@ static int flac_read_header(AVFormatContext *s)
             if (!buffer) {
                 return AVERROR(ENOMEM);
             }
-            if (avio_read(s->pb, buffer, metadata_size) != metadata_size) {
-                RETURN_ERROR(AVERROR(EIO));
+            ret = ffio_read_size(s->pb, buffer, metadata_size);
+            if (ret < 0) {
+                RETURN_ERROR(ret);
             }
             break;
         /* skip metadata block for unsupported types */

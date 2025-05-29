@@ -27,6 +27,7 @@
  * SpeedHQ encoder.
  */
 
+#include "libavutil/avassert.h"
 #include "libavutil/thread.h"
 
 #include "avcodec.h"
@@ -36,6 +37,7 @@
 #include "mpegvideo.h"
 #include "mpegvideodata.h"
 #include "mpegvideoenc.h"
+#include "put_bits.h"
 #include "rl.h"
 #include "speedhq.h"
 #include "speedhqenc.h"
@@ -95,54 +97,12 @@ static av_cold void speedhq_init_static_data(void)
                              ff_speedhq_vlc_table, uni_speedhq_ac_vlc_len);
 }
 
-av_cold int ff_speedhq_encode_init(MpegEncContext *s)
+static int speedhq_encode_picture_header(MPVMainEncContext *const m)
 {
-    static AVOnce init_static_once = AV_ONCE_INIT;
+    SpeedHQEncContext *const ctx = (SpeedHQEncContext*)m;
+    MPVEncContext *const s = &m->s;
 
-    if (s->width > 65500 || s->height > 65500) {
-        av_log(s, AV_LOG_ERROR, "SpeedHQ does not support resolutions above 65500x65500\n");
-        return AVERROR(EINVAL);
-    }
-
-    // border is not implemented correctly at the moment, see ticket #10078
-    if (s->width % 16) {
-        av_log(s, AV_LOG_ERROR, "width must be a multiple of 16\n");
-        return AVERROR_PATCHWELCOME;
-    }
-
-    s->min_qcoeff = -2048;
-    s->max_qcoeff = 2047;
-
-    ff_thread_once(&init_static_once, speedhq_init_static_data);
-
-    s->intra_ac_vlc_length      =
-    s->intra_ac_vlc_last_length =
-    s->intra_chroma_ac_vlc_length      =
-    s->intra_chroma_ac_vlc_last_length = uni_speedhq_ac_vlc_len;
-
-    s->y_dc_scale_table =
-    s->c_dc_scale_table = ff_mpeg12_dc_scale_table[3];
-
-    switch (s->avctx->pix_fmt) {
-    case AV_PIX_FMT_YUV420P:
-        s->avctx->codec_tag = MKTAG('S','H','Q','0');
-        break;
-    case AV_PIX_FMT_YUV422P:
-        s->avctx->codec_tag = MKTAG('S','H','Q','2');
-        break;
-    case AV_PIX_FMT_YUV444P:
-        s->avctx->codec_tag = MKTAG('S','H','Q','4');
-        break;
-    default:
-        av_assert0(0);
-    }
-
-    return 0;
-}
-
-void ff_speedhq_encode_picture_header(MpegEncContext *s)
-{
-    SpeedHQEncContext *ctx = (SpeedHQEncContext*)s;
+    put_bits_assume_flushed(&s->pb);
 
     put_bits_le(&s->pb, 8, 100 - s->qscale * 2);  /* FIXME why doubled */
     put_bits_le(&s->pb, 24, 4);  /* no second field */
@@ -272,20 +232,59 @@ void ff_speedhq_encode_mb(MpegEncContext *s, int16_t block[12][64])
     s->i_tex_bits += get_bits_diff(s);
 }
 
-static int ff_speedhq_mb_rows_in_slice(int slice_num, int mb_height)
+static av_cold int speedhq_encode_init(AVCodecContext *avctx)
 {
-    return mb_height / 4 + (slice_num < (mb_height % 4));
-}
+    static AVOnce init_static_once = AV_ONCE_INIT;
+    MPVMainEncContext *const m = avctx->priv_data;
+    MPVEncContext *const s = &m->s;
+    int ret;
 
-int ff_speedhq_mb_y_order_to_mb(int mb_y_order, int mb_height, int *first_in_slice)
-{
-    int slice_num = 0;
-    while (mb_y_order >= ff_speedhq_mb_rows_in_slice(slice_num, mb_height)) {
-         mb_y_order -= ff_speedhq_mb_rows_in_slice(slice_num, mb_height);
-         slice_num++;
+    if (avctx->width > 65500 || avctx->height > 65500) {
+        av_log(avctx, AV_LOG_ERROR, "SpeedHQ does not support resolutions above 65500x65500\n");
+        return AVERROR(EINVAL);
     }
-    *first_in_slice = (mb_y_order == 0);
-    return mb_y_order * 4 + slice_num;
+
+    // border is not implemented correctly at the moment, see ticket #10078
+    if (avctx->width % 16) {
+        av_log(avctx, AV_LOG_ERROR, "width must be a multiple of 16\n");
+        return AVERROR_PATCHWELCOME;
+    }
+
+    switch (avctx->pix_fmt) {
+    case AV_PIX_FMT_YUV420P:
+        avctx->codec_tag = MKTAG('S','H','Q','0');
+        break;
+    case AV_PIX_FMT_YUV422P:
+        avctx->codec_tag = MKTAG('S','H','Q','2');
+        break;
+    case AV_PIX_FMT_YUV444P:
+        avctx->codec_tag = MKTAG('S','H','Q','4');
+        break;
+    default:
+        av_unreachable("Already checked via CODEC_PIXFMTS");
+    }
+
+    m->encode_picture_header = speedhq_encode_picture_header;
+    s->encode_mb             = speedhq_encode_mb;
+
+    s->min_qcoeff = -2048;
+    s->max_qcoeff = 2047;
+
+    s->intra_ac_vlc_length      =
+    s->intra_ac_vlc_last_length =
+    s->intra_chroma_ac_vlc_length      =
+    s->intra_chroma_ac_vlc_last_length = uni_speedhq_ac_vlc_len;
+
+    s->c.y_dc_scale_table =
+    s->c.c_dc_scale_table = ff_mpeg12_dc_scale_table[3];
+
+    ret = ff_mpv_encode_init(avctx);
+    if (ret < 0)
+        return ret;
+
+    ff_thread_once(&init_static_once, speedhq_init_static_data);
+
+    return 0;
 }
 
 const FFCodec ff_speedhq_encoder = {
