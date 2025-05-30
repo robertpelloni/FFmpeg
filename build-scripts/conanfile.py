@@ -23,7 +23,7 @@ class conanRecipe(ConanFile):
 
 
     def requirements(self):
-        self.requires("videoai/1.9.21-oiio3b1")
+        self.requires("videoai/1.9.24-oiio3")
         self.requires("libvpx/1.11.0")
         if self.settings.os != "Linux":
             self.requires("aom/3.5.0@josh")
@@ -36,7 +36,7 @@ class conanRecipe(ConanFile):
             self.requires("zimg/3.0.5")
         if self.settings.os == "Windows":
             self.requires("amf/1.4.36@josh")
-            self.requires("libvpl/2023.0.0@josh")
+            self.requires("libvpl/2025.4.18")
             self.requires("zlib-mt/1.2.13")
 
     def generate(self):
