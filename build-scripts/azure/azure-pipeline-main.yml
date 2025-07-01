@@ -100,23 +100,6 @@ stages:
         - checkout: self
           persistCredentials: true
         - bash: |
-            cd "$(Build.SourcesDirectory)/"
-            git tag "topaz-v$(VERSION)"
-            git push --tags  
-          displayName: Tag
-          
-      pool: 
-        name: UbuntuVMSS
-
-- ${{ if eq(parameters.publish, true) }}:
-  - stage: Tag
-    condition: succeeded('Build')
-    jobs:
-    - job: Tagging
-      steps:
-        - checkout: self
-          persistCredentials: true
-        - bash: |
             cd "$(Build.SourcesDirectory)/FFmpeg"
 
             echo "Set User for Github"
