@@ -32,6 +32,14 @@ parameters:
     displayName: 'MacOS'
     type: boolean
     default: true
+  - name: build_note
+    displayName: 'Build Note'
+    type: string
+    default: "."
+  - name: azure_tags
+    displayName: 'Additional Azure tags'
+    type: object
+    default: []
 
 variables:
   - name: VERSION
@@ -99,3 +107,39 @@ stages:
           
       pool: 
         name: UbuntuVMSS
+
+- ${{ if eq(parameters.publish, true) }}:
+  - stage: Tag
+    condition: succeeded('Build')
+    jobs:
+    - job: Tagging
+      steps:
+        - checkout: self
+          persistCredentials: true
+        - bash: |
+            cd "$(Build.SourcesDirectory)/FFmpeg"
+
+            echo "Set User for Github"
+            git config --global user.email "dev@topazlabs.com"
+            git config --global user.name "Topaz Labs Build Pipeline"
+
+            if [ "${{ parameters.build_note }}" = "." ]; then
+              note=""
+            else
+              note="${{ parameters.build_note }}"
+            fi
+
+            git tag -a "v$(VERSION)" -m "$note"
+            git push --tags
+          displayName: Tag (Github)
+        - bash: |
+            cleaned_version="${VERSION//+/\-}"
+            echo "##vso[build.addbuildtag]$cleaned_version"
+          displayName: 'Tag Version (Azure)'
+        - ${{ if ne(length(parameters.azure_tags), 0)}}:
+          - bash: |
+              tags=$(echo '${{ convertToJson(parameters.azure_tags) }}' | jq -r '.[]')
+              for tag in $tags; do
+                echo "##vso[build.addbuildtag]$tag"
+              done
+            displayName: 'Azure Tags'
