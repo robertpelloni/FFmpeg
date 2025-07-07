@@ -24,95 +24,12 @@ class conanRecipe(ConanFile):
         self.info.requires["videoai"].minor_mode()
 
     def package(self):
-        # Copy header files from include folder or root
-        src_include = os.path.join(self.source_folder, "include")
-        if os.path.exists(src_include):
-            copy(
-                self,
-                "*",
-                src=src_include,
-                dst=os.path.join(self.package_folder, "include"),
-                keep_path=True,
-            )
-        else:
-            # Copy header files from root if no include folder
-            copy(
-                self,
-                "*.h",
-                src=self.source_folder,
-                dst=os.path.join(self.package_folder, "include"),
-                keep_path=True,
-            )
-        
-        if self.settings.os == "Windows":
-            # Copy DLLs and executables to bin folder (from any location in source)
-            copy(
-                self,
-                "*.dll",
-                src=self.source_folder,
-                dst=os.path.join(self.package_folder, "bin"),
-                keep_path=False,
-            )
-            copy(
-                self,
-                "*.exe",
-                src=self.source_folder,
-                dst=os.path.join(self.package_folder, "bin"),
-                keep_path=False,
-            )
-            copy(
-                self,
-                "*.lib",
-                src=self.source_folder,
-                dst=os.path.join(self.package_folder, "lib"),
-                keep_path=False,
-            )
-        else:       
-            # Copy libraries to lib folder (from any location in source)
-            copy(
-                self,
-                "*.a",
-                src=self.source_folder,
-                dst=os.path.join(self.package_folder, "lib"),
-                keep_path=False,
-            )
-            copy(
-                self,
-                "*.so*",
-                src=self.source_folder,
-                dst=os.path.join(self.package_folder, "lib"),
-                keep_path=False,
-            )
-            copy(
-                self,
-                "*.dylib",
-                src=self.source_folder,
-                dst=os.path.join(self.package_folder, "lib"),
-                keep_path=False,
-            )
-            copy(
-                self,
-                "ffmpeg",
-                src=self.source_folder,
-                dst=os.path.join(self.package_folder, "bin"),
-                keep_path=False,
-            )
-            copy(
-                self,
-                "ffprobe",
-                src=self.source_folder,
-                dst=os.path.join(self.package_folder, "bin"),
-                keep_path=False,
-            )
-    
-        
-        # Copy pkg-config files
         copy(
             self,
-            "*.pc",
+            "*",
             src=self.source_folder,
-            dst=os.path.join(self.package_folder, "lib", "pkgconfig"),
-            keep_path=False,
+            dst=self.package_folder,
+            keep_path=True,
         )
         copy(
             self,
