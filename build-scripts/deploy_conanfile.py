@@ -84,7 +84,14 @@ class conanRecipe(ConanFile):
         )
         copy(
             self,
-            "*.exe",
+            "ffprobe*",
+            src=self.source_folder,
+            dst=os.path.join(self.package_folder, "bin"),
+            keep_path=False,
+        )
+        copy(
+            self,
+            "ffmpeg*",
             src=self.source_folder,
             dst=os.path.join(self.package_folder, "bin"),
             keep_path=False,
