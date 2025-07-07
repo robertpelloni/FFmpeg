@@ -44,58 +44,67 @@ class conanRecipe(ConanFile):
                 keep_path=True,
             )
         
-        # Copy libraries to lib folder (from any location in source)
-        copy(
-            self,
-            "*.lib",
-            src=self.source_folder,
-            dst=os.path.join(self.package_folder, "lib"),
-            keep_path=False,
-        )
-        copy(
-            self,
-            "*.a",
-            src=self.source_folder,
-            dst=os.path.join(self.package_folder, "lib"),
-            keep_path=False,
-        )
-        copy(
-            self,
-            "*.so*",
-            src=self.source_folder,
-            dst=os.path.join(self.package_folder, "lib"),
-            keep_path=False,
-        )
-        copy(
-            self,
-            "*.dylib",
-            src=self.source_folder,
-            dst=os.path.join(self.package_folder, "lib"),
-            keep_path=False,
-        )
-        
-        # Copy DLLs and executables to bin folder (from any location in source)
-        copy(
-            self,
-            "*.dll",
-            src=self.source_folder,
-            dst=os.path.join(self.package_folder, "bin"),
-            keep_path=False,
-        )
-        copy(
-            self,
-            "ffprobe*",
-            src=self.source_folder,
-            dst=os.path.join(self.package_folder, "bin"),
-            keep_path=False,
-        )
-        copy(
-            self,
-            "ffmpeg*",
-            src=self.source_folder,
-            dst=os.path.join(self.package_folder, "bin"),
-            keep_path=False,
-        )
+        if self.settings.os == "Windows":
+            # Copy DLLs and executables to bin folder (from any location in source)
+            copy(
+                self,
+                "*.dll",
+                src=self.source_folder,
+                dst=os.path.join(self.package_folder, "bin"),
+                keep_path=False,
+            )
+            copy(
+                self,
+                "*.exe",
+                src=self.source_folder,
+                dst=os.path.join(self.package_folder, "bin"),
+                keep_path=False,
+            )
+            copy(
+                self,
+                "*.lib",
+                src=self.source_folder,
+                dst=os.path.join(self.package_folder, "lib"),
+                keep_path=False,
+            )
+        else:       
+            # Copy libraries to lib folder (from any location in source)
+            copy(
+                self,
+                "*.a",
+                src=self.source_folder,
+                dst=os.path.join(self.package_folder, "lib"),
+                keep_path=False,
+            )
+            copy(
+                self,
+                "*.so*",
+                src=self.source_folder,
+                dst=os.path.join(self.package_folder, "lib"),
+                keep_path=False,
+            )
+            copy(
+                self,
+                "*.dylib",
+                src=self.source_folder,
+                dst=os.path.join(self.package_folder, "lib"),
+                keep_path=False,
+            )
+            copy(
+                self,
+                "ffmpeg",
+                src=self.source_folder,
+                dst=os.path.join(self.package_folder, "bin"),
+                keep_path=False,
+            )
+            copy(
+                self,
+                "ffprobe",
+                src=self.source_folder,
+                dst=os.path.join(self.package_folder, "bin"),
+                keep_path=False,
+            )
+    
         
         # Copy pkg-config files
         copy(
