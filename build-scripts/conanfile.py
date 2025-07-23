@@ -14,6 +14,8 @@ class conanRecipe(ConanFile):
         self.options["zimg"].shared = True
         if self.settings.os == "Macos" or self.settings.os == "Linux":
             self.options["libvpx"].shared = True
+        if self.settings.os == "Macos":
+            self.options["openssl"].shared = False
 
     def build_requirements(self):
         if self.settings.os == "Macos" and self.settings.arch == "x86_64":

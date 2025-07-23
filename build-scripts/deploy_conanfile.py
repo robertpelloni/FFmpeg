@@ -10,6 +10,8 @@ class conanRecipe(ConanFile):
         self.options["zimg"].shared = True
         if self.settings.os == "Macos" or self.settings.os == "Linux":
             self.options["libvpx"].shared = True
+        if self.settings.os == "Macos":
+            self.options["openssl"].shared = False
 
     def requirements(self):
         self.requires("videoai/1.9.12-linuxtrt1014+2")
