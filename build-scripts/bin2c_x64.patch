@@ -1,0 +1,13 @@
+diff --git a/ffbuild/common.mak b/ffbuild/common.mak
+index ddf48923ea..130d62ad94 100644
+--- a/ffbuild/common.mak
++++ b/ffbuild/common.mak
+@@ -13,7 +13,7 @@ endif
+ ifndef SUBDIR
+ 
+ BIN2CEXE = ffbuild/bin2c$(HOSTEXESUF)
+-BIN2C = $(BIN2CEXE)
++BIN2C = ffbuild/bin2c_x64$(HOSTEXESUF)
+ 
+ ifndef V
+ Q      = @
