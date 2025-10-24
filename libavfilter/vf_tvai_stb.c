@@ -66,7 +66,7 @@ static const AVOption tvai_stb_options[] = {
     { "full", "Perform full-frame stabilization. If disabled, performs auto-crop (ignores full-reame related options)", OFFSET(enableFullFrame), AV_OPT_TYPE_INT, {.i64=1}, 0, 1, .flags = FLAGS, "full" },
     { "filename", "CPE output filename", OFFSET(filename), AV_OPT_TYPE_STRING, {.str="cpe.json"}, .flags = FLAGS, "filename"},
     { "rst", "Read start time relative to CPE", OFFSET(readStartTime), AV_OPT_TYPE_DOUBLE, {.dbl=0}, 0, DBL_MAX, .flags = FLAGS, "rst" },
-    { "ret", "Read end time relative to read start time (rst)", OFFSET(readEndTime), AV_OPT_TYPE_DOUBLE, {.dbl=0}, 0, DBL_MAX, .flags = FLAGS, "ret" },
+    { "ret", "Read end time relative to read start time (rst)", OFFSET(readEndTime), AV_OPT_TYPE_DOUBLE, {.dbl=DBL_MAX}, 0, DBL_MAX, .flags = FLAGS, "ret" },
     { "ws", "Window size for full-frame synthesis", OFFSET(windowSize), AV_OPT_TYPE_INT, {.i64=64}, 0, 512, .flags = FLAGS, "ws"  },
     { "csx", "Scale of the canvas relative to input width", OFFSET(canvasScaleX), AV_OPT_TYPE_DOUBLE, {.dbl=2}, 1, 8, .flags = FLAGS, "csx"  },
     { "csy", "Scale of the canvas relative to input height", OFFSET(canvasScaleY), AV_OPT_TYPE_DOUBLE, {.dbl=2}, 1, 8, .flags = FLAGS, "csy"  },
