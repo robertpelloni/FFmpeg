@@ -45,7 +45,7 @@ typedef struct TVAIStbContext {
     void* pFrameProcessor;
     double smoothness;
     int windowSize, cacheSize, stabDOF, enableRSC, enableFullFrame, reduceMotion;
-    double readStartTime, writeStartTime, canvasScaleX, canvasScaleY;
+    double readStartTime, readEndTime, canvasScaleX, canvasScaleY;
     AVFrame* previousFrame;
     AVDictionary *parameters;
     DictionaryItem *pModelParameters;
@@ -66,7 +66,7 @@ static const AVOption tvai_stb_options[] = {
     { "full", "Perform full-frame stabilization. If disabled, performs auto-crop (ignores full-reame related options)", OFFSET(enableFullFrame), AV_OPT_TYPE_INT, {.i64=1}, 0, 1, .flags = FLAGS, "full" },
     { "filename", "CPE output filename", OFFSET(filename), AV_OPT_TYPE_STRING, {.str="cpe.json"}, .flags = FLAGS, "filename"},
     { "rst", "Read start time relative to CPE", OFFSET(readStartTime), AV_OPT_TYPE_DOUBLE, {.dbl=0}, 0, DBL_MAX, .flags = FLAGS, "rst" },
-    { "wst", "Write start time relative to read start time (rst)", OFFSET(writeStartTime), AV_OPT_TYPE_DOUBLE, {.dbl=0}, 0, DBL_MAX, .flags = FLAGS, "wst" },
+    { "ret", "Read end time relative to read start time (rst)", OFFSET(readEndTime), AV_OPT_TYPE_DOUBLE, {.dbl=0}, 0, DBL_MAX, .flags = FLAGS, "ret" },
     { "ws", "Window size for full-frame synthesis", OFFSET(windowSize), AV_OPT_TYPE_INT, {.i64=64}, 0, 512, .flags = FLAGS, "ws"  },
     { "csx", "Scale of the canvas relative to input width", OFFSET(canvasScaleX), AV_OPT_TYPE_DOUBLE, {.dbl=2}, 1, 8, .flags = FLAGS, "csx"  },
     { "csy", "Scale of the canvas relative to input height", OFFSET(canvasScaleY), AV_OPT_TYPE_DOUBLE, {.dbl=2}, 1, 8, .flags = FLAGS, "csy"  },
@@ -101,8 +101,8 @@ static int config_props(AVFilterLink *outlink) {
     av_dict_set_float(&tvai->parameters, "cacheAfter", tvai->cacheSize, 0);
     av_dict_set_float(&tvai->parameters, "stabDOF", tvai->stabDOF, 0);
     av_dict_set_float(&tvai->parameters, "enableRSC", tvai->enableRSC, 0);
-    /* av_dict_set_float(&tvai->parameters, "readStartTime", tvai->readStartTime, 0); */
-    /* av_dict_set_float(&tvai->parameters, "writeStartTime", tvai->writeStartTime, 0); */
+    av_dict_set_float(&tvai->parameters, "readStartTime", tvai->readStartTime, 0);
+    av_dict_set_float(&tvai->parameters, "readEndTime", tvai->readEndTime, 0);
     av_dict_set_float(&tvai->parameters, "reduceMotion", tvai->reduceMotion, 0);
     tvai->pModelParameters = ff_tvai_alloc_copy_entries(tvai->parameters, &tvai->modelParametersCount);
   
