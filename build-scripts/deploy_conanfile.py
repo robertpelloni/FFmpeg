@@ -18,7 +18,7 @@ class conanRecipe(ConanFile):
             self.options["libx264"].shared = True
 
     def requirements(self):
-        self.requires("videoai/1.9.51-tensorrt1011")
+        self.requires("videoai/1.9.51-tensorrt1014")
         if self.settings.os == "Macos" and self.settings.arch == "x86_64":
             self.requires("zimg/3.0.5@josh/oiio3")
         else:
