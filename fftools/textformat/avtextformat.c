@@ -43,8 +43,8 @@
 static const struct {
     double bin_val;
     double dec_val;
-    const char *bin_str;
-    const char *dec_str;
+    char bin_str[4];
+    char dec_str[4];
 } si_prefixes[] = {
     { 1.0, 1.0, "", "" },
     { 1.024e3, 1e3, "Ki", "K" },
@@ -101,13 +101,10 @@ static void bprint_bytes(AVBPrint *bp, const uint8_t *ubuf, size_t ubuf_size)
 int avtext_context_close(AVTextFormatContext **ptctx)
 {
     AVTextFormatContext *tctx = *ptctx;
-    int i;
     int ret = 0;
 
     if (!tctx)
         return AVERROR(EINVAL);
-
-    av_hash_freep(&tctx->hash);
 
     av_hash_freep(&tctx->hash);
 
@@ -117,7 +114,7 @@ int avtext_context_close(AVTextFormatContext **ptctx)
         if (tctx->formatter->priv_class)
             av_opt_free(tctx->priv);
     }
-    for (i = 0; i < SECTION_MAX_NB_LEVELS; i++)
+    for (int i = 0; i < SECTION_MAX_NB_LEVELS; i++)
         av_bprint_finalize(&tctx->section_pbuf[i], NULL);
     av_freep(&tctx->priv);
     av_opt_free(tctx);
@@ -130,7 +127,7 @@ int avtext_context_open(AVTextFormatContext **ptctx, const AVTextFormatter *form
                         const AVTextFormatSection *sections, int nb_sections, AVTextFormatOptions options, char *show_data_hash)
 {
     AVTextFormatContext *tctx;
-    int i, ret = 0;
+    int ret = 0;
 
     av_assert0(ptctx && formatter);
 
@@ -202,7 +199,7 @@ int avtext_context_open(AVTextFormatContext **ptctx, const AVTextFormatter *form
             if (ret == AVERROR(EINVAL)) {
                 const char *n;
                 av_log(NULL, AV_LOG_ERROR, "Unknown hash algorithm '%s'\nKnown algorithms:", show_data_hash);
-                for (i = 0; (n = av_hash_names(i)); i++)
+                for (unsigned i = 0; (n = av_hash_names(i)); i++)
                     av_log(NULL, AV_LOG_ERROR, " %s", n);
                 av_log(NULL, AV_LOG_ERROR, "\n");
             }
@@ -225,7 +222,6 @@ int avtext_context_open(AVTextFormatContext **ptctx, const AVTextFormatter *form
                 av_log(tctx, AV_LOG_ERROR,
                        "Invalid UTF8 sequence %s found in string validation replace '%s'\n",
                        bp.str, tctx->string_validation_replacement);
-                return ret;
                 goto fail;
             }
         }
@@ -437,11 +433,11 @@ static char *value_string(const AVTextFormatContext *tctx, char *buf, int buf_si
 }
 
 
-void avtext_print_unit_int(AVTextFormatContext *tctx, const char *key, int value, const char *unit)
+void avtext_print_unit_integer(AVTextFormatContext *tctx, const char *key, int64_t val, const char *unit)
 {
     char val_str[128];
     struct unit_value uv;
-    uv.val.i = value;
+    uv.val.i = val;
     uv.unit = unit;
     avtext_print_string(tctx, key, value_string(tctx, val_str, sizeof(val_str), uv), 0);
 }
@@ -525,13 +521,13 @@ void avtext_print_data(AVTextFormatContext *tctx, const char *key,
 {
     AVBPrint bp;
     unsigned offset = 0;
-    int l, i;
+    int i;
 
     av_bprint_init(&bp, 0, AV_BPRINT_SIZE_UNLIMITED);
     av_bprintf(&bp, "\n");
     while (size) {
         av_bprintf(&bp, "%08x: ", offset);
-        l = FFMIN(size, 16);
+        int l = FFMIN(size, 16);
         for (i = 0; i < l; i++) {
             av_bprintf(&bp, "%02x", data[i]);
             if (i & 1)
@@ -571,7 +567,6 @@ void avtext_print_integers(AVTextFormatContext *tctx, const char *key,
 {
     AVBPrint bp;
     unsigned offset = 0;
-    int l, i;
 
     if (!key || !data || !format || columns <= 0 || bytes <= 0)
         return;
@@ -580,8 +575,7 @@ void avtext_print_integers(AVTextFormatContext *tctx, const char *key,
     av_bprintf(&bp, "\n");
     while (size) {
         av_bprintf(&bp, "%08x: ", offset);
-        l = FFMIN(size, columns);
-        for (i = 0; i < l; i++) {
+        for (int i = 0, l = FFMIN(size, columns); i < l; i++) {
             if      (bytes == 1) av_bprintf(&bp, format, *data);
             else if (bytes == 2) av_bprintf(&bp, format, AV_RN16(data));
             else if (bytes == 4) av_bprintf(&bp, format, AV_RN32(data));
@@ -681,34 +675,28 @@ fail:
     return ret;
 }
 
-static const AVTextFormatter *registered_formatters[9 + 1];
-
-static void formatters_register_all(void)
+static const AVTextFormatter *const registered_formatters[] =
 {
-    static int initialized;
-
-    if (initialized)
-        return;
-    initialized = 1;
-
-    registered_formatters[0] = &avtextformatter_default;
-    registered_formatters[1] = &avtextformatter_compact;
-    registered_formatters[2] = &avtextformatter_csv;
-    registered_formatters[3] = &avtextformatter_flat;
-    registered_formatters[4] = &avtextformatter_ini;
-    registered_formatters[5] = &avtextformatter_json;
-    registered_formatters[6] = &avtextformatter_xml;
-    registered_formatters[7] = &avtextformatter_mermaid;
-    registered_formatters[8] = &avtextformatter_mermaidhtml;
-}
+    &avtextformatter_default,
+    &avtextformatter_compact,
+    &avtextformatter_csv,
+    &avtextformatter_flat,
+    &avtextformatter_ini,
+    &avtextformatter_json,
+    &avtextformatter_xml,
+    &avtextformatter_mermaid,
+    &avtextformatter_mermaidhtml,
+    NULL
+};
 
 const AVTextFormatter *avtext_get_formatter_by_name(const char *name)
 {
-    formatters_register_all();
-
-    for (int i = 0; registered_formatters[i]; i++)
-        if (!strcmp(registered_formatters[i]->name, name))
+    for (int i = 0; registered_formatters[i]; i++) {
+        const char *end;
+        if (av_strstart(name, registered_formatters[i]->name, &end) &&
+            (*end == '\0' || *end == '='))
             return registered_formatters[i];
+    }
 
     return NULL;
 }

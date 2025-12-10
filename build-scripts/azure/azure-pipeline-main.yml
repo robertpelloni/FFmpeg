@@ -1,16 +1,3 @@
-resources:
-  repositories:
-    - repository: topaz-conan-dev
-      type: github
-      endpoint: TopazLabs
-      name: TopazLabs/topaz-conan-dev
-      ref: feature/upload
-    - repository: nv-codec-headers
-      type: github
-      endpoint: TopazLabs
-      name: FFmpeg/nv-codec-headers
-      ref: refs/tags/n13.0.19.0
-
 parameters:
   - name: version
     displayName: 'VERSION'
@@ -36,8 +23,21 @@ parameters:
     displayName: 'MacOS'
     type: boolean
     default: true
+  - name: nv_codec_headers
+    displayName: 'NV CODEC HEADERS version(tag)'
+    type: string
+    default: n13.0.19.0
+  - name: build_note
+    displayName: 'Build Note'
+    type: string
+    default: "."
+  - name: azure_tags
+    displayName: 'Additional Azure tags'
+    type: object
+    default: []
 
 variables:
+  - group: "Secrets"
   - name: VERSION
     value: ${{ parameters.version }}
   - ${{ if eq(parameters.publish, true) }}:
@@ -52,6 +52,27 @@ variables:
   - ${{ if eq(parameters.publish, false) }}:
     - name: PUBLISH
       value: ''
+  - name: BUILD_NOTE
+    value: ${{ parameters.build_note }}
+
+resources:
+  repositories:
+    - repository: pipeline-helper
+      type: github
+      endpoint: TopazLabs
+      name: TopazLabs/pipeline-helper
+      ref: main
+    - repository: topaz-conan-dev
+      type: github
+      endpoint: TopazLabs
+      name: TopazLabs/topaz-conan-dev
+      ref: feature/upload
+    - repository: nv-codec-headers
+      type: github
+      endpoint: TopazLabs
+      name: FFmpeg/nv-codec-headers
+      ref: "refs/tags/${{ parameters.nv_codec_headers }}"
+
 
 stages:
 - stage: Build
@@ -99,6 +120,7 @@ stages:
         - AppleSilicon
       steps:
         - template: macos.yml
+
 - ${{ if eq(parameters.publish, true) }}:
   - stage: Tag
     condition: succeeded('Build')
@@ -108,10 +130,29 @@ stages:
         - checkout: self
           persistCredentials: true
         - bash: |
-            cd "$(Build.SourcesDirectory)/"
-            git tag "topaz-v$(VERSION)"
-            git push --tags  
-          displayName: Tag
-          
-      pool: 
-        name: UbuntuVMSS
+            cd "$(Build.SourcesDirectory)/FFmpeg"
+
+            echo "Set User for Github"
+            git config --global user.email "dev@topazlabs.com"
+            git config --global user.name "Topaz Labs Build Pipeline"
+
+            if [ "${{ parameters.build_note }}" = "." ]; then
+              note="- $(Build.RequestedFor)"
+            else
+              note="${{ parameters.build_note }} - $(Build.RequestedFor)"
+            fi
+
+            git tag -a "v$(VERSION)" -m "$note"
+            git push --tags
+          displayName: Tag (Github)
+        - bash: |
+            cleaned_version="${VERSION//+/\-}"
+            echo "##vso[build.addbuildtag]$cleaned_version"
+          displayName: 'Tag Version (Azure)'
+        - ${{ if ne(length(parameters.azure_tags), 0)}}:
+          - bash: |
+              tags=$(echo '${{ convertToJson(parameters.azure_tags) }}' | jq -r '.[]')
+              for tag in $tags; do
+                echo "##vso[build.addbuildtag]$tag"
+              done
+            displayName: 'Azure Tags'

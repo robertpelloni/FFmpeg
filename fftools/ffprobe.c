@@ -36,6 +36,7 @@
 #include "libavutil/ambient_viewing_environment.h"
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
+#include "libavutil/avutil.h"
 #include "libavutil/bprint.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/display.h"
@@ -129,6 +130,11 @@ static int use_value_prefix             = 0;
 static int use_byte_value_binary_prefix = 0;
 static int use_value_sexagesimal_format = 0;
 static int show_private_data            = 1;
+
+static const char *audio_codec_name = NULL;
+static const char *data_codec_name = NULL;
+static const char *subtitle_codec_name = NULL;
+static const char *video_codec_name = NULL;
 
 #define SHOW_OPTIONAL_FIELDS_AUTO       -1
 #define SHOW_OPTIONAL_FIELDS_NEVER       0
@@ -429,7 +435,7 @@ static void log_callback(void *ptr, int level, const char *fmt, va_list vl)
 #define print_ts(k, v)          avtext_print_ts(tfc, k, v, 0)
 #define print_duration_time(k, v, tb) avtext_print_time(tfc, k, v, tb, 1)
 #define print_duration_ts(k, v)       avtext_print_ts(tfc, k, v, 1)
-#define print_val(k, v, u)      avtext_print_unit_int(tfc, k, v, u)
+#define print_val(k, v, u)      avtext_print_unit_integer(tfc, k, v, u)
 
 #define REALLOCZ_ARRAY_STREAM(ptr, cur_n, new_n)                        \
 {                                                                       \
@@ -455,6 +461,43 @@ static inline int show_tags(AVTextFormatContext *tfc, AVDictionary *tags, int se
     avtext_print_section_footer(tfc);
 
     return ret;
+}
+
+static void print_displaymatrix(AVTextFormatContext *tfc, const int32_t matrix[9])
+{
+    double rotation = av_display_rotation_get(matrix);
+    if (isnan(rotation))
+        rotation = 0;
+    avtext_print_integers(tfc, "displaymatrix", (void*)matrix, 9, " %11d", 3, 4, 1);
+    print_int("rotation", rotation);
+}
+
+static void print_mastering_display_metadata(AVTextFormatContext *tfc,
+                                             const AVMasteringDisplayMetadata *metadata)
+{
+    if (metadata->has_primaries) {
+        print_q("red_x",   metadata->display_primaries[0][0], '/');
+        print_q("red_y",   metadata->display_primaries[0][1], '/');
+        print_q("green_x", metadata->display_primaries[1][0], '/');
+        print_q("green_y", metadata->display_primaries[1][1], '/');
+        print_q("blue_x",  metadata->display_primaries[2][0], '/');
+        print_q("blue_y",  metadata->display_primaries[2][1], '/');
+
+        print_q("white_point_x", metadata->white_point[0], '/');
+        print_q("white_point_y", metadata->white_point[1], '/');
+    }
+
+    if (metadata->has_luminance) {
+        print_q("min_luminance", metadata->min_luminance, '/');
+        print_q("max_luminance", metadata->max_luminance, '/');
+    }
+}
+
+static void print_context_light_level(AVTextFormatContext *tfc,
+                                      const AVContentLightMetadata *metadata)
+{
+    print_int("max_content", metadata->MaxCLL);
+    print_int("max_average", metadata->MaxFALL);
 }
 
 static void print_dovi_metadata(AVTextFormatContext *tfc, const AVDOVIMetadata *dovi)
@@ -929,121 +972,98 @@ static void print_pkt_side_data(AVTextFormatContext *tfc,
                                 const AVPacketSideData *sd,
                                 SectionID id_data)
 {
-        const char *name = av_packet_side_data_name(sd->type);
+    const char *name = av_packet_side_data_name(sd->type);
 
-        avtext_print_section_header(tfc, sd, id_data);
-        print_str("side_data_type", name ? name : "unknown");
-        if (sd->type == AV_PKT_DATA_DISPLAYMATRIX && sd->size >= 9*4) {
-            double rotation = av_display_rotation_get((int32_t *)sd->data);
-            if (isnan(rotation))
-                rotation = 0;
-            avtext_print_integers(tfc, "displaymatrix", sd->data, 9, " %11d", 3, 4, 1);
-            print_int("rotation", rotation);
-        } else if (sd->type == AV_PKT_DATA_STEREO3D) {
-            const AVStereo3D *stereo = (AVStereo3D *)sd->data;
-            print_str("type", av_stereo3d_type_name(stereo->type));
-            print_int("inverted", !!(stereo->flags & AV_STEREO3D_FLAG_INVERT));
-            print_str("view", av_stereo3d_view_name(stereo->view));
-            print_str("primary_eye", av_stereo3d_primary_eye_name(stereo->primary_eye));
-            print_int("baseline", stereo->baseline);
-            print_q("horizontal_disparity_adjustment", stereo->horizontal_disparity_adjustment, '/');
-            print_q("horizontal_field_of_view", stereo->horizontal_field_of_view, '/');
-        } else if (sd->type == AV_PKT_DATA_SPHERICAL) {
-            const AVSphericalMapping *spherical = (AVSphericalMapping *)sd->data;
-            print_str("projection", av_spherical_projection_name(spherical->projection));
-            if (spherical->projection == AV_SPHERICAL_CUBEMAP) {
-                print_int("padding", spherical->padding);
-            } else if (spherical->projection == AV_SPHERICAL_EQUIRECTANGULAR_TILE) {
-                size_t l, t, r, b;
-                av_spherical_tile_bounds(spherical, par->width, par->height,
-                                         &l, &t, &r, &b);
-                print_int("bound_left", l);
-                print_int("bound_top", t);
-                print_int("bound_right", r);
-                print_int("bound_bottom", b);
-            }
-
-            print_int("yaw", (double) spherical->yaw / (1 << 16));
-            print_int("pitch", (double) spherical->pitch / (1 << 16));
-            print_int("roll", (double) spherical->roll / (1 << 16));
-        } else if (sd->type == AV_PKT_DATA_SKIP_SAMPLES && sd->size == 10) {
-            print_int("skip_samples",    AV_RL32(sd->data));
-            print_int("discard_padding", AV_RL32(sd->data + 4));
-            print_int("skip_reason",     AV_RL8(sd->data + 8));
-            print_int("discard_reason",  AV_RL8(sd->data + 9));
-        } else if (sd->type == AV_PKT_DATA_MASTERING_DISPLAY_METADATA) {
-            AVMasteringDisplayMetadata *metadata = (AVMasteringDisplayMetadata *)sd->data;
-
-            if (metadata->has_primaries) {
-                print_q("red_x", metadata->display_primaries[0][0], '/');
-                print_q("red_y", metadata->display_primaries[0][1], '/');
-                print_q("green_x", metadata->display_primaries[1][0], '/');
-                print_q("green_y", metadata->display_primaries[1][1], '/');
-                print_q("blue_x", metadata->display_primaries[2][0], '/');
-                print_q("blue_y", metadata->display_primaries[2][1], '/');
-
-                print_q("white_point_x", metadata->white_point[0], '/');
-                print_q("white_point_y", metadata->white_point[1], '/');
-            }
-
-            if (metadata->has_luminance) {
-                print_q("min_luminance", metadata->min_luminance, '/');
-                print_q("max_luminance", metadata->max_luminance, '/');
-            }
-        } else if (sd->type == AV_PKT_DATA_CONTENT_LIGHT_LEVEL) {
-            AVContentLightMetadata *metadata = (AVContentLightMetadata *)sd->data;
-            print_int("max_content", metadata->MaxCLL);
-            print_int("max_average", metadata->MaxFALL);
-        } else if (sd->type == AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT) {
-            print_ambient_viewing_environment(
-                tfc, (const AVAmbientViewingEnvironment *)sd->data);
-        } else if (sd->type == AV_PKT_DATA_DYNAMIC_HDR10_PLUS) {
-            AVDynamicHDRPlus *metadata = (AVDynamicHDRPlus *)sd->data;
-            print_dynamic_hdr10_plus(tfc, metadata);
-        } else if (sd->type == AV_PKT_DATA_DOVI_CONF) {
-            AVDOVIDecoderConfigurationRecord *dovi = (AVDOVIDecoderConfigurationRecord *)sd->data;
-            const char *comp = "unknown";
-            print_int("dv_version_major", dovi->dv_version_major);
-            print_int("dv_version_minor", dovi->dv_version_minor);
-            print_int("dv_profile", dovi->dv_profile);
-            print_int("dv_level", dovi->dv_level);
-            print_int("rpu_present_flag", dovi->rpu_present_flag);
-            print_int("el_present_flag", dovi->el_present_flag);
-            print_int("bl_present_flag", dovi->bl_present_flag);
-            print_int("dv_bl_signal_compatibility_id", dovi->dv_bl_signal_compatibility_id);
-            switch (dovi->dv_md_compression)
-            {
-                case AV_DOVI_COMPRESSION_NONE:     comp = "none";     break;
-                case AV_DOVI_COMPRESSION_LIMITED:  comp = "limited";  break;
-                case AV_DOVI_COMPRESSION_RESERVED: comp = "reserved"; break;
-                case AV_DOVI_COMPRESSION_EXTENDED: comp = "extended"; break;
-            }
-            print_str("dv_md_compression", comp);
-        } else if (sd->type == AV_PKT_DATA_AUDIO_SERVICE_TYPE) {
-            enum AVAudioServiceType *t = (enum AVAudioServiceType *)sd->data;
-            print_int("service_type", *t);
-        } else if (sd->type == AV_PKT_DATA_MPEGTS_STREAM_ID) {
-            print_int("id", *sd->data);
-        } else if (sd->type == AV_PKT_DATA_CPB_PROPERTIES) {
-            const AVCPBProperties *prop = (AVCPBProperties *)sd->data;
-            print_int("max_bitrate", prop->max_bitrate);
-            print_int("min_bitrate", prop->min_bitrate);
-            print_int("avg_bitrate", prop->avg_bitrate);
-            print_int("buffer_size", prop->buffer_size);
-            print_int("vbv_delay",   prop->vbv_delay);
-        } else if (sd->type == AV_PKT_DATA_WEBVTT_IDENTIFIER ||
-                   sd->type == AV_PKT_DATA_WEBVTT_SETTINGS) {
-            if (do_show_data)
-                avtext_print_data(tfc, "data", sd->data, sd->size);
-            avtext_print_data_hash(tfc, "data_hash", sd->data, sd->size);
-        } else if (sd->type == AV_PKT_DATA_FRAME_CROPPING && sd->size >= sizeof(uint32_t) * 4) {
-            print_int("crop_top",    AV_RL32(sd->data));
-            print_int("crop_bottom", AV_RL32(sd->data + 4));
-            print_int("crop_left",   AV_RL32(sd->data + 8));
-            print_int("crop_right",  AV_RL32(sd->data + 12));
-        } else if (sd->type == AV_PKT_DATA_AFD && sd->size > 0) {
-            print_int("active_format", *sd->data);
+    avtext_print_section_header(tfc, sd, id_data);
+    print_str("side_data_type", name ? name : "unknown");
+    if (sd->type == AV_PKT_DATA_DISPLAYMATRIX && sd->size >= 9*4) {
+        print_displaymatrix(tfc, (const int32_t*)sd->data);
+    } else if (sd->type == AV_PKT_DATA_STEREO3D) {
+        const AVStereo3D *stereo = (AVStereo3D *)sd->data;
+        print_str("type", av_stereo3d_type_name(stereo->type));
+        print_int("inverted", !!(stereo->flags & AV_STEREO3D_FLAG_INVERT));
+        print_str("view", av_stereo3d_view_name(stereo->view));
+        print_str("primary_eye", av_stereo3d_primary_eye_name(stereo->primary_eye));
+        print_int("baseline", stereo->baseline);
+        print_q("horizontal_disparity_adjustment", stereo->horizontal_disparity_adjustment, '/');
+        print_q("horizontal_field_of_view", stereo->horizontal_field_of_view, '/');
+    } else if (sd->type == AV_PKT_DATA_SPHERICAL) {
+        const AVSphericalMapping *spherical = (AVSphericalMapping *)sd->data;
+        print_str("projection", av_spherical_projection_name(spherical->projection));
+        if (spherical->projection == AV_SPHERICAL_CUBEMAP) {
+            print_int("padding", spherical->padding);
+        } else if (spherical->projection == AV_SPHERICAL_EQUIRECTANGULAR_TILE) {
+            size_t l, t, r, b;
+            av_spherical_tile_bounds(spherical, par->width, par->height,
+                                     &l, &t, &r, &b);
+            print_int("bound_left", l);
+            print_int("bound_top", t);
+            print_int("bound_right", r);
+            print_int("bound_bottom", b);
         }
+
+        print_int("yaw", (double) spherical->yaw / (1 << 16));
+        print_int("pitch", (double) spherical->pitch / (1 << 16));
+        print_int("roll", (double) spherical->roll / (1 << 16));
+    } else if (sd->type == AV_PKT_DATA_SKIP_SAMPLES && sd->size == 10) {
+        print_int("skip_samples",    AV_RL32(sd->data));
+        print_int("discard_padding", AV_RL32(sd->data + 4));
+        print_int("skip_reason",     AV_RL8(sd->data + 8));
+        print_int("discard_reason",  AV_RL8(sd->data + 9));
+    } else if (sd->type == AV_PKT_DATA_MASTERING_DISPLAY_METADATA) {
+        print_mastering_display_metadata(tfc, (AVMasteringDisplayMetadata *)sd->data);
+    } else if (sd->type == AV_PKT_DATA_CONTENT_LIGHT_LEVEL) {
+        print_context_light_level(tfc, (AVContentLightMetadata *)sd->data);
+    } else if (sd->type == AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT) {
+        print_ambient_viewing_environment(
+            tfc, (const AVAmbientViewingEnvironment *)sd->data);
+    } else if (sd->type == AV_PKT_DATA_DYNAMIC_HDR10_PLUS) {
+        AVDynamicHDRPlus *metadata = (AVDynamicHDRPlus *)sd->data;
+        print_dynamic_hdr10_plus(tfc, metadata);
+    } else if (sd->type == AV_PKT_DATA_DOVI_CONF) {
+        AVDOVIDecoderConfigurationRecord *dovi = (AVDOVIDecoderConfigurationRecord *)sd->data;
+        const char *comp = "unknown";
+        print_int("dv_version_major", dovi->dv_version_major);
+        print_int("dv_version_minor", dovi->dv_version_minor);
+        print_int("dv_profile", dovi->dv_profile);
+        print_int("dv_level", dovi->dv_level);
+        print_int("rpu_present_flag", dovi->rpu_present_flag);
+        print_int("el_present_flag", dovi->el_present_flag);
+        print_int("bl_present_flag", dovi->bl_present_flag);
+        print_int("dv_bl_signal_compatibility_id", dovi->dv_bl_signal_compatibility_id);
+        switch (dovi->dv_md_compression)
+        {
+            case AV_DOVI_COMPRESSION_NONE:     comp = "none";     break;
+            case AV_DOVI_COMPRESSION_LIMITED:  comp = "limited";  break;
+            case AV_DOVI_COMPRESSION_RESERVED: comp = "reserved"; break;
+            case AV_DOVI_COMPRESSION_EXTENDED: comp = "extended"; break;
+        }
+        print_str("dv_md_compression", comp);
+    } else if (sd->type == AV_PKT_DATA_AUDIO_SERVICE_TYPE) {
+        enum AVAudioServiceType *t = (enum AVAudioServiceType *)sd->data;
+        print_int("service_type", *t);
+    } else if (sd->type == AV_PKT_DATA_MPEGTS_STREAM_ID) {
+        print_int("id", *sd->data);
+    } else if (sd->type == AV_PKT_DATA_CPB_PROPERTIES) {
+        const AVCPBProperties *prop = (AVCPBProperties *)sd->data;
+        print_int("max_bitrate", prop->max_bitrate);
+        print_int("min_bitrate", prop->min_bitrate);
+        print_int("avg_bitrate", prop->avg_bitrate);
+        print_int("buffer_size", prop->buffer_size);
+        print_int("vbv_delay",   prop->vbv_delay);
+    } else if (sd->type == AV_PKT_DATA_WEBVTT_IDENTIFIER ||
+               sd->type == AV_PKT_DATA_WEBVTT_SETTINGS) {
+        if (do_show_data)
+            avtext_print_data(tfc, "data", sd->data, sd->size);
+        avtext_print_data_hash(tfc, "data_hash", sd->data, sd->size);
+    } else if (sd->type == AV_PKT_DATA_FRAME_CROPPING && sd->size >= sizeof(uint32_t) * 4) {
+        print_int("crop_top",    AV_RL32(sd->data));
+        print_int("crop_bottom", AV_RL32(sd->data + 4));
+        print_int("crop_left",   AV_RL32(sd->data + 8));
+        print_int("crop_right",  AV_RL32(sd->data + 12));
+    } else if (sd->type == AV_PKT_DATA_AFD && sd->size > 0) {
+        print_int("active_format", *sd->data);
+    }
 }
 
 static void print_private_data(AVTextFormatContext *tfc, void *priv_data)
@@ -1279,11 +1299,7 @@ static void print_frame_side_data(AVTextFormatContext *tfc,
         name = av_frame_side_data_name(sd->type);
         print_str("side_data_type", name ? name : "unknown");
         if (sd->type == AV_FRAME_DATA_DISPLAYMATRIX && sd->size >= 9*4) {
-            double rotation = av_display_rotation_get((int32_t *)sd->data);
-            if (isnan(rotation))
-                rotation = 0;
-            avtext_print_integers(tfc, "displaymatrix", sd->data, 9, " %11d", 3, 4, 1);
-            print_int("rotation", rotation);
+            print_displaymatrix(tfc, (const int32_t*)sd->data);
         } else if (sd->type == AV_FRAME_DATA_AFD && sd->size > 0) {
             print_int("active_format", *sd->data);
         } else if (sd->type == AV_FRAME_DATA_GOP_TIMECODE && sd->size >= 8) {
@@ -1303,31 +1319,12 @@ static void print_frame_side_data(AVTextFormatContext *tfc,
             }
             avtext_print_section_footer(tfc);
         } else if (sd->type == AV_FRAME_DATA_MASTERING_DISPLAY_METADATA) {
-            AVMasteringDisplayMetadata *metadata = (AVMasteringDisplayMetadata *)sd->data;
-
-            if (metadata->has_primaries) {
-                print_q("red_x", metadata->display_primaries[0][0], '/');
-                print_q("red_y", metadata->display_primaries[0][1], '/');
-                print_q("green_x", metadata->display_primaries[1][0], '/');
-                print_q("green_y", metadata->display_primaries[1][1], '/');
-                print_q("blue_x", metadata->display_primaries[2][0], '/');
-                print_q("blue_y", metadata->display_primaries[2][1], '/');
-
-                print_q("white_point_x", metadata->white_point[0], '/');
-                print_q("white_point_y", metadata->white_point[1], '/');
-            }
-
-            if (metadata->has_luminance) {
-                print_q("min_luminance", metadata->min_luminance, '/');
-                print_q("max_luminance", metadata->max_luminance, '/');
-            }
+            print_mastering_display_metadata(tfc, (AVMasteringDisplayMetadata *)sd->data);
         } else if (sd->type == AV_FRAME_DATA_DYNAMIC_HDR_PLUS) {
             AVDynamicHDRPlus *metadata = (AVDynamicHDRPlus *)sd->data;
             print_dynamic_hdr10_plus(tfc, metadata);
         } else if (sd->type == AV_FRAME_DATA_CONTENT_LIGHT_LEVEL) {
-            AVContentLightMetadata *metadata = (AVContentLightMetadata *)sd->data;
-            print_int("max_content", metadata->MaxCLL);
-            print_int("max_average", metadata->MaxFALL);
+            print_context_light_level(tfc, (AVContentLightMetadata *)sd->data);
         } else if (sd->type == AV_FRAME_DATA_ICC_PROFILE) {
             const AVDictionaryEntry *tag = av_dict_get(sd->metadata, "name", NULL, AV_DICT_MATCH_CASE);
             if (tag)
@@ -2293,6 +2290,65 @@ static void show_error(AVTextFormatContext *tfc, int err)
     avtext_print_section_footer(tfc);
 }
 
+static int get_decoder_by_name(const char *codec_name, const AVCodec **codec)
+{
+    if (codec_name == NULL)
+        return 0;
+
+    *codec = avcodec_find_decoder_by_name(codec_name);
+    if (*codec == NULL) {
+        av_log(NULL, AV_LOG_ERROR,
+                "No codec could be found with name '%s'\n", codec_name);
+        return AVERROR(EINVAL);
+    }
+    return 0;
+}
+
+static int set_decoders(AVFormatContext *fmt_ctx)
+{
+    int ret;
+
+#define GET_DECODER(type_) \
+    ret = get_decoder_by_name(type_##_codec_name, &fmt_ctx->type_##_codec); \
+    if (ret < 0) return ret;
+
+    GET_DECODER(audio);
+    GET_DECODER(data);
+    GET_DECODER(subtitle);
+    GET_DECODER(video);
+    return 0;
+}
+
+static const AVCodec *get_decoder_for_stream(AVFormatContext *fmt_ctx, AVStream *stream)
+{
+    const AVCodec *codec = NULL;
+    switch (stream->codecpar->codec_type) {
+        case AVMEDIA_TYPE_VIDEO:    codec = fmt_ctx->video_codec; break;
+        case AVMEDIA_TYPE_AUDIO:    codec = fmt_ctx->audio_codec; break;
+        case AVMEDIA_TYPE_SUBTITLE: codec = fmt_ctx->subtitle_codec; break;
+        case AVMEDIA_TYPE_DATA:     codec = fmt_ctx->data_codec; break;
+    }
+
+    if (codec != NULL)
+        return codec;
+
+    if (stream->codecpar->codec_id == AV_CODEC_ID_PROBE) {
+        av_log(NULL, AV_LOG_WARNING,
+               "Failed to probe codec for input stream %d\n", stream->index);
+        return NULL;
+    }
+
+    codec = avcodec_find_decoder(stream->codecpar->codec_id);
+    if (codec == NULL) {
+        av_log(NULL, AV_LOG_WARNING,
+               "Unsupported codec with id %d for input stream %d\n",
+               stream->codecpar->codec_id, stream->index);
+        return NULL;
+    }
+
+    return codec;
+}
+
 static int open_input_file(InputFile *ifile, const char *filename,
                            const char *print_filename)
 {
@@ -2305,6 +2361,9 @@ static int open_input_file(InputFile *ifile, const char *filename,
     if (!fmt_ctx)
         return AVERROR(ENOMEM);
 
+    err = set_decoders(fmt_ctx);
+    if (err < 0)
+        return err;
     if (!av_dict_get(format_opts, "scan_all_pmts", NULL, AV_DICT_MATCH_CASE)) {
         av_dict_set(&format_opts, "scan_all_pmts", "1", AV_DICT_DONT_OVERWRITE);
         scan_all_pmts_set = 1;
@@ -2359,20 +2418,10 @@ static int open_input_file(InputFile *ifile, const char *filename,
 
         ist->st = stream;
 
-        if (stream->codecpar->codec_id == AV_CODEC_ID_PROBE) {
-            av_log(NULL, AV_LOG_WARNING,
-                   "Failed to probe codec for input stream %d\n",
-                    stream->index);
+        codec = get_decoder_for_stream(fmt_ctx, stream);
+        if (!codec)
             continue;
-        }
 
-        codec = avcodec_find_decoder(stream->codecpar->codec_id);
-        if (!codec) {
-            av_log(NULL, AV_LOG_WARNING,
-                    "Unsupported codec with id %d for input stream %d\n",
-                    stream->codecpar->codec_id, stream->index);
-            continue;
-        }
         {
             AVDictionary *opts;
 
@@ -2390,7 +2439,7 @@ static int open_input_file(InputFile *ifile, const char *filename,
                 exit(1);
 
             if (do_show_log) {
-                // For loging it is needed to disable at least frame threads as otherwise
+                // For logging it is needed to disable at least frame threads as otherwise
                 // the log information would need to be reordered and matches up to contexts and frames
                 // That is in fact possible but not trivial
                 av_dict_set(&codec_opts, "threads", "1", 0);
@@ -2519,6 +2568,10 @@ end:
     av_freep(&selected_streams);
     av_freep(&streams_with_closed_captions);
     av_freep(&streams_with_film_grain);
+    av_freep(&audio_codec_name);
+    av_freep(&data_codec_name);
+    av_freep(&subtitle_codec_name);
+    av_freep(&video_codec_name);
 
     return ret;
 }
@@ -2973,6 +3026,36 @@ static int opt_sections(void *optctx, const char *opt, const char *arg)
     return 0;
 }
 
+static int opt_codec(void *optctx, const char *opt, const char *arg)
+{
+   const char *spec = strchr(opt, ':');
+   const char **name;
+   if (!spec) {
+       av_log(NULL, AV_LOG_ERROR,
+              "No media specifier was specified for '%s' in option '%s'. Use -%s:<media_spec> "
+              "where <media_spec> can be one of: 'a' (audio), 'v' (video), 's' (subtitle), 'd' (data)\n",
+               arg, opt, opt);
+       return AVERROR(EINVAL);
+   }
+   spec++;
+
+   switch (spec[0]) {
+   case 'a' : name = &audio_codec_name;    break;
+   case 'd' : name = &data_codec_name;     break;
+   case 's' : name = &subtitle_codec_name; break;
+   case 'v' : name = &video_codec_name;    break;
+   default:
+       av_log(NULL, AV_LOG_ERROR,
+              "Invalid media specifier '%s' in option '%s'. "
+              "Must be one of: 'a' (audio), 'v' (video), 's' (subtitle), 'd' (data)\n", spec, opt);
+       return AVERROR(EINVAL);
+   }
+
+   av_freep(name);
+   *name = av_strdup(arg);
+   return *name ? 0 : AVERROR(ENOMEM);
+}
+
 static int opt_show_versions(void *optctx, const char *opt, const char *arg)
 {
     mark_section_show_entries(SECTION_ID_PROGRAM_VERSION, 1, NULL);
@@ -3048,6 +3131,8 @@ static const OptionDef real_options[] = {
     { "print_filename",        OPT_TYPE_FUNC, OPT_FUNC_ARG, {.func_arg = opt_print_filename}, "override the printed input filename", "print_file"},
     { "find_stream_info",      OPT_TYPE_BOOL, OPT_INPUT | OPT_EXPERT, { &find_stream_info },
         "read and decode the streams to fill missing information with heuristics" },
+    { "c",                     OPT_TYPE_FUNC, OPT_FUNC_ARG, { .func_arg = opt_codec}, "force decoder", "decoder_name" },
+    { "codec",                 OPT_TYPE_FUNC, OPT_FUNC_ARG, { .func_arg = opt_codec}, "alias for -c (force decoder)", "decoder_name" },
     { NULL, },
 };
 

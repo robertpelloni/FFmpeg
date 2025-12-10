@@ -96,7 +96,7 @@ enum AVFrameSideDataType {
      */
     AV_FRAME_DATA_MOTION_VECTORS,
     /**
-     * Recommmends skipping the specified number of samples. This is exported
+     * Recommends skipping the specified number of samples. This is exported
      * only if the "skip_manual" AVOption is set in libavcodec.
      * This has the same format as AV_PKT_DATA_SKIP_SAMPLES.
      * @code
@@ -243,6 +243,17 @@ enum AVFrameSideDataType {
      * The data is an int storing the view ID.
      */
     AV_FRAME_DATA_VIEW_ID,
+
+    /**
+     * This side data contains information about the reference display width(s)
+     * and reference viewing distance(s) as well as information about the
+     * corresponding reference stereo pair(s), i.e., the pair(s) of views to be
+     * displayed for the viewer's left and right eyes on the reference display
+     * at the reference viewing distance.
+     * The payload is the AV3DReferenceDisplaysInfo struct defined in
+     * libavutil/tdrdi.h.
+     */
+    AV_FRAME_DATA_3D_REFERENCE_DISPLAYS,
 };
 
 enum AVActiveFormatDescription {

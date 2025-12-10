@@ -225,20 +225,22 @@ FATE_H264-$(call FRAMECRC, MOV, H264) += fate-h264-unescaped-extradata
 # this sample contains field-coded frames, with both fields in a single packet
 FATE_H264-$(call FRAMECRC, MOV, H264) += fate-h264-twofields-packet
 
-FATE_H264-$(call DEMMUX, MOV, H264, H264_MP4TOANNEXB_BSF H264_METADATA_BSF SCALE_FILTER) += fate-h264-bsf-mp4toannexb-new-extradata
+FATE_H264-$(call FRAMECRC, MOV H264, H264, H264_PARSER H264_MUXER H264_MP4TOANNEXB_BSF H264_METADATA_BSF SCALE_FILTER) += fate-h264-bsf-mp4toannexb-new-extradata
 
-FATE_H264-$(call DEMMUX, MOV, H264, H264_MP4TOANNEXB_BSF) += fate-h264-bsf-mp4toannexb \
+FATE_H264-$(call FRAMECRC, MOV,, H264_MUXER H264_MP4TOANNEXB_BSF) += fate-h264-bsf-mp4toannexb \
                                                              fate-h264-bsf-mp4toannexb-2 \
-                                                             fate-h264_mp4toannexb_ticket5927 \
-                                                             fate-h264_mp4toannexb_ticket5927_2 \
 
-FATE_H264-$(call DEMMUX, H264, MOV, DTS2PTS_BSF) += fate-h264-bsf-dts2pts
+FATE_H264-$(call FRAMECRC, MOV H264, H264, H264_PARSER H264_MUXER H264_MP4TOANNEXB_BSF EXTRACT_EXTRADATA_BSF) += fate-h264_mp4toannexb_ticket5927 \
+                                                             fate-h264_mp4toannexb_ticket5927_2
+
+FATE_H264-$(call FRAMECRC, MOV H264,, H264_PARSER MOV_MUXER DTS2PTS_BSF) += fate-h264-bsf-dts2pts
 
 FATE_H264-$(call FRAMECRC, MATROSKA, H264) += fate-h264-direct-bff
 FATE_H264-$(call FRAMECRC, FLV, H264, SCALE_FILTER) += fate-h264-brokensps-2580
 FATE_H264-$(call FRAMECRC, MXF, H264, PCM_S24LE_DECODER SCALE_FILTER ARESAMPLE_FILTER) += fate-h264-xavc-4389
 FATE_H264-$(call FRAMECRC, MOV, H264) += fate-h264-attachment-631
-FATE_H264-$(call FRAMECRC, MPEGTS, H264, H264_PARSER MP3_DECODER SCALE_FILTER ARESAMPLE_FILTER) += fate-h264-skip-nokey fate-h264-skip-nointra
+FATE_H264-$(call FRAMECRC, MPEGTS, H264, H264_PARSER MP3_DECODER SCALE_FILTER ARESAMPLE_FILTER) += fate-h264-skip-nokey
+FATE_H264-$(call FRAMECRC, MPEGTS, H264, H264_PARSER MP3_DECODER SCALE_FILTER ARESAMPLE_FILTER EXTRACT_EXTRADATA_BSF) += fate-h264-skip-nointra
 FATE_H264_FFPROBE-$(call DEMDEC, MATROSKA, H264) += fate-h264-dts_5frames
 FATE_H264_FFPROBE-$(call PARSERDEMDEC, H264, H264, H264) += fate-h264-afd
 
@@ -248,7 +250,7 @@ fate-h264: $(FATE_H264-yes) $(FATE_H264_FFPROBE-yes)
 
 fate-h264-conformance-aud_mw_e:                   CMD = framecrc -i $(TARGET_SAMPLES)/h264-conformance/AUD_MW_E.264
 
-#force framerate so that the option is tested, theres no other case that tests it, its not needed at all otherwise here
+#force framerate so that the option is tested, there's no other case that tests it, its not needed at all otherwise here
 fate-h264-conformance-ba1_ft_c:                   CMD = framecrc -framerate 19 -i $(TARGET_SAMPLES)/h264-conformance/BA1_FT_C.264
 
 fate-h264-conformance-ba1_sony_d:                 CMD = framecrc -i $(TARGET_SAMPLES)/h264-conformance/BA1_Sony_D.jsv

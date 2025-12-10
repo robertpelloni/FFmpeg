@@ -336,7 +336,7 @@ void avcodec_align_dimensions2(AVCodecContext *s, int *width, int *height,
 
         // H.264 uses edge emulation for out of frame motion vectors, for this
         // it requires a temporary area large enough to hold a 21x21 block,
-        // increasing witdth ensure that the temporary area is large enough,
+        // increasing width ensure that the temporary area is large enough,
         // the next rounded up width is 32
         *width = FFMAX(*width, 32);
     }
@@ -550,6 +550,7 @@ int av_get_bits_per_sample(enum AVCodecID codec_id)
     case AV_CODEC_ID_DFPWM:
         return 1;
     case AV_CODEC_ID_ADPCM_SBPRO_2:
+    case AV_CODEC_ID_G728:
         return 2;
     case AV_CODEC_ID_ADPCM_SBPRO_3:
         return 3;

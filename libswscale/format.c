@@ -157,6 +157,10 @@ static const FormatEntry format_entries[] = {
     [AV_PIX_FMT_YUV444P12LE]    = { 1, 1 },
     [AV_PIX_FMT_YUV444P14BE]    = { 1, 1 },
     [AV_PIX_FMT_YUV444P14LE]    = { 1, 1 },
+    [AV_PIX_FMT_YUV444P10MSBBE] = { 1, 1 },
+    [AV_PIX_FMT_YUV444P10MSBLE] = { 1, 1 },
+    [AV_PIX_FMT_YUV444P12MSBBE] = { 1, 1 },
+    [AV_PIX_FMT_YUV444P12MSBLE] = { 1, 1 },
     [AV_PIX_FMT_GBRP]           = { 1, 1 },
     [AV_PIX_FMT_GBRP9LE]        = { 1, 1 },
     [AV_PIX_FMT_GBRP9BE]        = { 1, 1 },
@@ -164,8 +168,12 @@ static const FormatEntry format_entries[] = {
     [AV_PIX_FMT_GBRP10BE]       = { 1, 1 },
     [AV_PIX_FMT_GBRAP10LE]      = { 1, 1 },
     [AV_PIX_FMT_GBRAP10BE]      = { 1, 1 },
+    [AV_PIX_FMT_GBRP10MSBLE]    = { 1, 1 },
+    [AV_PIX_FMT_GBRP10MSBBE]    = { 1, 1 },
     [AV_PIX_FMT_GBRP12LE]       = { 1, 1 },
     [AV_PIX_FMT_GBRP12BE]       = { 1, 1 },
+    [AV_PIX_FMT_GBRP12MSBLE]    = { 1, 1 },
+    [AV_PIX_FMT_GBRP12MSBBE]    = { 1, 1 },
     [AV_PIX_FMT_GBRAP12LE]      = { 1, 1 },
     [AV_PIX_FMT_GBRAP12BE]      = { 1, 1 },
     [AV_PIX_FMT_GBRP14LE]       = { 1, 1 },
@@ -439,7 +447,7 @@ static int infer_prim_ref(SwsColor *csp, const SwsColor *ref)
     if (csp->prim != AVCOL_PRI_UNSPECIFIED)
         return 0;
 
-    /* Re-use the reference gamut only for "safe", similar primaries */
+    /* Reuse the reference gamut only for "safe", similar primaries */
     switch (ref->prim) {
     case AVCOL_PRI_BT709:
     case AVCOL_PRI_BT470M:

@@ -562,6 +562,12 @@ int ff_http_averror(int status_code, int default_averror)
         return default_averror;
 }
 
+const char* ff_http_get_new_location(URLContext *h)
+{
+    HTTPContext *s = h->priv_data;
+    return s->new_location;
+}
+
 static int http_write_reply(URLContext* h, int status_code)
 {
     int ret, body = 0, reply_code, message_len;
@@ -1332,7 +1338,7 @@ static int get_cookies(HTTPContext *s, char **cookies, const char *path,
             }
         }
 
-        // if no domain in the cookie assume it appied to this request
+        // if no domain in the cookie assume it applied to this request
         if ((e = av_dict_get(cookie_params, "domain", NULL, 0)) && e->value) {
             // find the offset comparison is on the min domain (b.com, not a.b.com)
             int domain_offset = strlen(domain) - strlen(e->value);

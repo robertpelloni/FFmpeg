@@ -50,3 +50,9 @@
 /conan-x64
 
 test.obj
+!/.forgejo/
+
+
+# topaz
+**/conan-x64
+**/output-conan

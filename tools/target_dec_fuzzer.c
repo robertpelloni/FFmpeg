@@ -72,6 +72,8 @@ static void error(const char *err)
 }
 
 static const FFCodec *c = NULL;
+
+#ifndef FFMPEG_DECODER
 static const FFCodec *AVCodecInitialize(enum AVCodecID codec_id)
 {
     const AVCodec *res;
@@ -81,6 +83,7 @@ static const FFCodec *AVCodecInitialize(enum AVCodecID codec_id)
         error("Failed to find decoder");
     return ffcodec(res);
 }
+#endif
 
 static int subtitle_handler(AVCodecContext *avctx, AVFrame *unused,
                             int *got_sub_ptr, const AVPacket *avpkt)
@@ -262,7 +265,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_LSCR:        maxpixels  /= 16;    break;
     case AV_CODEC_ID_MMVIDEO:     maxpixels  /= 256;   break;
     case AV_CODEC_ID_MOTIONPIXELS:maxpixels  /= 256;   break;
-    case AV_CODEC_ID_MP4ALS:      maxsamples /= 65536; break;
+    case AV_CODEC_ID_MP4ALS:      maxsamples /= 65536;
+                                  av_dict_set_int(&opts, "max_order", 15, 0);
+                                  break;
     case AV_CODEC_ID_MSA1:        maxpixels  /= 16384; break;
     case AV_CODEC_ID_MSCC:        maxpixels  /= 4096;  break;
     case AV_CODEC_ID_MSRLE:       maxpixels  /= 16;    break;
@@ -289,6 +294,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_RASC:        maxpixels  /= 256;   break;
     case AV_CODEC_ID_RTV1:        maxpixels  /= 16;    break;
     case AV_CODEC_ID_RV30:        maxpixels  /= 256;   break;
+    case AV_CODEC_ID_RV60:        maxpixels  /= 256;   break;
     case AV_CODEC_ID_SANM:        maxpixels  /= 16;    break;
     case AV_CODEC_ID_SCPR:        maxpixels  /= 32;    break;
     case AV_CODEC_ID_SCREENPRESSO:maxpixels  /= 64;    break;
@@ -321,6 +327,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_VP6F:        maxpixels  /= 4096;  break;
     case AV_CODEC_ID_VP6A:        maxpixels  /= 4096;  break;
     case AV_CODEC_ID_VP7:         maxpixels  /= 256;   break;
+    case AV_CODEC_ID_VP8:         maxpixels  /= 256;   break;
     case AV_CODEC_ID_VP9:         maxpixels  /= 4096;  break;
     case AV_CODEC_ID_WAVPACK:     maxsamples /= 1024;  break;
     case AV_CODEC_ID_WCMV:        maxpixels  /= 1024;  break;
@@ -615,7 +622,7 @@ maximums_reached:
             break;
     } while (got_frame == 1 && it++ < maxiteration);
 
-    fprintf(stderr, "pixels decoded: %"PRId64", samples decoded: %"PRId64", iterations: %d\n", ec_pixels, nb_samples, it);
+    // fprintf(stderr, "pixels decoded: %"PRId64", samples decoded: %"PRId64", iterations: %d\n", ec_pixels, nb_samples, it);
 
     av_frame_free(&frame);
     avcodec_free_context(&ctx);
