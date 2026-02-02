@@ -1,3 +1,9 @@
+parameters:
+  - name: icx
+    displayName: 'Intel Compiler (ICX)'
+    type: boolean
+    default: false
+
 steps:
   - checkout: self
   - checkout: topaz-conan-dev
@@ -28,6 +34,17 @@ steps:
       set MSYSTEM=MINGW64
       C:\msys64\msys2_shell.cmd -defterm -no-start -mingw64 -c "$(cygpath '$(Build.SourcesDirectory)/FFmpeg/build-scripts/win/build_win.sh')"
     displayName: Set up MSVC toolchain and build
+
+# intel compiler(icl/icx)
+  - ${{ if eq(parameters.icx, true) }}:
+    - script: |
+        call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+        
+        cd /d "C:\msys64"
+        set MSYSTEM=MINGW64
+        C:\msys64\msys2_shell.cmd -defterm -no-start -use-full-path -mingw64 -c "$(cygpath '$(Build.SourcesDirectory)/FFmpeg/build-scripts/win/build_win.sh')" --icx --no-warnings
+
+      displayName: Set up Intel oneAPI toolchain and build
 
   - bash: |
       cd "$(Build.SourcesDirectory)/FFmpeg"
