@@ -77,6 +77,5 @@ steps:
     displayName: Slack Dependency Manager
     continueOnError: true 
     env:
-      ARCH: ${{ parameters.arch }}
       DEPENDENCY_MANAGER_SLACK_WEBHOOK: $(DEPENDENCY_MANAGER_SLACK_WEBHOOK)
       BUILD_TYPE: ""
