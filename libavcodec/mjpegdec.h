@@ -36,6 +36,8 @@
 
 #include "avcodec.h"
 #include "blockdsp.h"
+#include "bytestream.h"
+#include "exif.h"
 #include "get_bits.h"
 #include "hpeldsp.h"
 #include "idctdsp.h"
@@ -55,6 +57,7 @@ typedef struct MJpegDecodeContext {
     AVClass *class;
     AVCodecContext *avctx;
     GetBitContext gb;
+    GetByteContext gB;
     int buf_size;
 
     int start_code; /* current start code */
@@ -109,7 +112,6 @@ typedef struct MJpegDecodeContext {
     AVFrame *picture_ptr; /* pointer to picture structure */
     int got_picture;                                ///< we found a SOF and picture is valid, too.
     int linesize[MAX_COMPONENTS];                   ///< linesize << interlaced
-    int8_t *qscale_table;
     DECLARE_ALIGNED(32, int16_t, block)[64];
     int16_t (*blocks[MAX_COMPONENTS])[64]; ///< intermediate sums (progressive mode)
     uint8_t *last_nnz[MAX_COMPONENTS];
@@ -118,13 +120,12 @@ typedef struct MJpegDecodeContext {
     int force_pal8;
     uint8_t permutated_scantable[64];
     BlockDSPContext bdsp;
-    HpelDSPContext hdsp;
     IDCTDSPContext idsp;
+    op_pixels_func copy_block;             ///< only set and used by mxpeg
 
     int restart_interval;
     int restart_count;
 
-    int buggy_avid;
     int cs_itu601;
     int interlace_polarity;
     int multiscope;
@@ -138,7 +139,7 @@ typedef struct MJpegDecodeContext {
     unsigned int ljpeg_buffer_size;
 
     int extern_huff;
-    AVDictionary *exif_metadata;
+    AVExifMetadata exif_metadata;
 
     AVStereo3D *stereo3d; ///!< stereoscopic information (cached, since it is read before frame allocation)
 
