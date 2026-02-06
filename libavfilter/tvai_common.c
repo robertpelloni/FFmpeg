@@ -72,7 +72,7 @@ int ff_tvai_prepareProcessorInfo(char *deviceString, VideoProcessorInfo* pProces
   }
   tvai_vp_name(pProcessorInfo->basic.modelName, procIndex, (char*)pProcessorInfo->basic.processorName);
   pProcessorInfo->basic.preflight = 0;
-  pProcessorInfo->basic.pixelFormat = TVAIPixelFormatRGB16;
+  pProcessorInfo->basic.pixelFormat = TVAIPixelFormatRGB32F;
   pProcessorInfo->basic.inputWidth = pInlink->w;
   pProcessorInfo->basic.inputHeight = pInlink->h;
   pProcessorInfo->basic.timebase = av_q2d(pInlink->time_base);

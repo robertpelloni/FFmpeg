@@ -52,3 +52,4 @@
 # topaz
 **/conan-x64
 **/output-conan
+.DS_Store
