@@ -10,4 +10,9 @@ build_type=Release
 libvpx*:compiler.runtime=static
 libaom-av1*:compiler.runtime=static
 zlib-mt*:compiler.runtime=static
+onnx/*:compiler.cppstd=17
+onnxruntime/*:compiler.cppstd=17
+re2/*:compiler.cppstd=17
+abseil/*:compiler.cppstd=17
+protobuf/*:compiler.cppstd=17
 [options]
