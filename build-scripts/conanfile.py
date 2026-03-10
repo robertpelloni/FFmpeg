@@ -34,7 +34,6 @@ class conanRecipe(ConanFile):
             self.requires("libaom-av1/3.8.0")
         else:
             self.requires("libvpx/1.14.1")
-            self.requires("libaom-av1/3.5.0")
 
         if self.settings.os == "Macos" and self.settings.arch == "x86_64":
             self.requires("zimg/3.0.5@josh/oiio3")
