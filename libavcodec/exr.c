@@ -1485,7 +1485,8 @@ static int decode_block(AVCodecContext *avctx, void *tdata,
                 }
 
                 // Zero out the end if xmax+1 is not w
-                memset(ptr_x, 0, axmax);
+                if (s->desc->flags & AV_PIX_FMT_FLAG_PLANAR || !c)
+                    memset(ptr_x, 0, axmax);
                 channel_buffer[c] += td->channel_line_size;
             }
         }
@@ -1840,7 +1841,7 @@ static int decode_header(EXRContext *s, AVFrame *frame)
                 s->is_luma = 1;
             } else {
                 avpriv_request_sample(s->avctx, "Uncommon channel combination");
-                ret = AVERROR(AVERROR_PATCHWELCOME);
+                ret = AVERROR_PATCHWELCOME;
                 goto fail;
             }
 
@@ -2246,6 +2247,8 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *picture,
     out_line_size    = avctx->width * s->desc->comp[0].step;
 
     if (s->is_tile) {
+        if (s->tile_attr.ySize <= 0 || s->tile_attr.xSize <= 0)
+            return AVERROR_INVALIDDATA;
         nb_blocks = ((s->xdelta + s->tile_attr.xSize - 1) / s->tile_attr.xSize) *
         ((s->ydelta + s->tile_attr.ySize - 1) / s->tile_attr.ySize);
     } else { /* scanline */
