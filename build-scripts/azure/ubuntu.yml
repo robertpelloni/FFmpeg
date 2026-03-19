@@ -18,14 +18,29 @@ steps:
       cd "$(Build.SourcesDirectory)/FFmpeg"
       bash ./build-scripts/linux/conan_linux.sh
     displayName: Install conan packages
+    env:
+      BUILD_LINUX_GPL: $(BUILD_LINUX_GPL)
     
   - bash: |
       cd "$(Build.SourcesDirectory)/FFmpeg"
       git apply ./build-scripts/configure-zimg.patch
       git apply ./build-scripts/configure-aom.patch
-      echo ./configure --enable-shared --disable-ffplay --disable-libxcb --disable-vulkan --disable-sdl2 --disable-xlib --enable-tvai --enable-libvpx --enable-libaom --enable-libzimg --enable-nvenc --enable-nvdec --extra-cflags="-I./conan/include -I./conan/include/videoai" --extra-ldflags="-Wl,-rpath,./conan/lib/ -L./conan/lib" --prefix=./output-conan/
+      git apply --verbose ./build-scripts/linux/configure-x264-x265.patch
+
+      configure_flags="--enable-shared --disable-ffplay --disable-libxcb --disable-vulkan --disable-sdl2 --disable-xlib --enable-tvai --enable-libvpx --enable-libaom --enable-libzimg --enable-nvenc --enable-nvdec"
+      build_linux_gpl="${BUILD_LINUX_GPL,,}"
+      if [[ "${build_linux_gpl}" == "true" ]]; then
+        configure_flags="--enable-gpl --enable-libx264 --enable-libx265 ${configure_flags}"
+      fi
+
+      echo ./configure ${configure_flags} --extra-cflags="-I./conan/include -I./conan/include/videoai" --extra-ldflags="-Wl,-rpath,./conan/lib/ -L./conan/lib" --prefix=./output-conan/
       set -e
-      ./configure --enable-shared --disable-ffplay --disable-libxcb --disable-vulkan --disable-sdl2 --disable-xlib --enable-tvai --enable-libvpx --enable-libaom --enable-libzimg --enable-nvenc --enable-nvdec --extra-cflags="-I./conan/include -I./conan/include/videoai" --extra-ldflags="-Wl,-rpath,./conan/lib/ -L./conan/lib" --prefix=./output-conan/
+      ./configure ${configure_flags} --extra-cflags="-I./conan/include -I./conan/include/videoai" --extra-ldflags="-Wl,-rpath,./conan/lib/ -L./conan/lib" --prefix=./output-conan/
+      
+    displayName: Apply patch and configure
+
+  - bash: |
+      cd "$(Build.SourcesDirectory)/FFmpeg"
       
       make clean
       make -j$(nproc) install
