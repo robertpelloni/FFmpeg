@@ -22,7 +22,7 @@ class conanRecipe(ConanFile):
 
     def build_requirements(self):
         if self.settings.os == "Macos" and self.settings.arch == "x86_64":
-            self.tool_requires("nasm/2.14")
+            self.tool_requires("nasm/2.16.01")
         if self.settings.os == "Windows":
             self.tool_requires("nasm/2.16.01")
 

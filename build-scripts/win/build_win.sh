@@ -64,7 +64,7 @@ CONFIGURE_CMD="$CONFIGURE_CMD \
   --enable-x86asm --x86asmexe=nasm \
   --enable-nvenc --enable-nvdec \
   --disable-vulkan \
-  --enable-amf \
+  --enable-amf --disable-filter=amf_capture \
   --enable-libvpl \
   --enable-zlib \
   --enable-libzimg \
