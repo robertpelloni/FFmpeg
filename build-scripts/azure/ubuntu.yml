@@ -52,7 +52,11 @@ steps:
         cp build-scripts/deploy_conanfile.py $(Build.SourcesDirectory)/topaz-conan-dev/prebuilt/topaz-ffmpeg/$(VERSION)/conanfile.py
         cp -Rp "output-conan"/* $(Build.SourcesDirectory)/topaz-conan-dev/prebuilt/topaz-ffmpeg/$(VERSION)/linux_x86_64/build_type\=Release/
         cd $(Build.SourcesDirectory)/topaz-conan-dev
-        bash ./run_publish_prebuilt.sh --package-name topaz-ffmpeg --package-version $(VERSION) -r topaz-conan
+        if [[ "${BUILD_LINUX_GPL}" == "true" ]]; then
+          bash ./run_publish_prebuilt.sh --package-name topaz-ffmpeg --package-version $(VERSION) -o build_linux_GPL=True -r topaz-conan
+        else
+          bash ./run_publish_prebuilt.sh --package-name topaz-ffmpeg --package-version $(VERSION) -r topaz-conan
+        fi
       fi
     displayName: Build FFmpeg
 

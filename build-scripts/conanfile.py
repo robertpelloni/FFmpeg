@@ -26,6 +26,10 @@ class conanRecipe(ConanFile):
         if self.settings.os == "Windows" and self.settings.arch == "x86_64":
             self.options["libaom-av1"].shared = True
 
+        if self.settings.os == "Linux" and self.options.build_linux_GPL:
+            self.options["libx265"].shared = True
+            self.options["libx264"].shared = True
+
     def build_requirements(self):
         if self.settings.os == "Macos" and self.settings.arch == "x86_64":
             self.tool_requires("nasm/2.16.01")
@@ -51,7 +55,7 @@ class conanRecipe(ConanFile):
         if self.settings.os == "Linux" and self.options.build_linux_GPL:
             self.requires("libx264/cci.20240224")
             self.requires("libx265/3.4")
-            
+
     def generate(self):
         for dep in self.dependencies.values():
             if dep.package_folder:

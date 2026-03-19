@@ -18,7 +18,7 @@ parameters:
   - name: linux_GPL
     displayName: 'GPL Software encoders'
     type: boolean
-    default: true  
+    default: false  
   - name: mac
     displayName: 'MacOS'
     type: boolean
