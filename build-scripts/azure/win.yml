@@ -5,6 +5,7 @@ parameters:
     default: false
   - name: icx_installer_url
     displayName: 'Intel ICX Installer URL (offline .exe)'
+    description: 'Direct HTTPS URL to the Windows offline installer (.exe). Pick a version on the Intel oneAPI DPC++/C++ compiler download page and copy the offline installer link: https://www.intel.com/content/www/us/en/developer/tools/oneapi/dpc-compiler-download.html'
     type: string
     default: ''
 

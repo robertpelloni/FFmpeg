@@ -30,7 +30,7 @@ Run `make -r -j8` followed by a `make -r install`
 ## Building with Intel ICX Compiler (Windows)
 
 The Intel oneAPI DPC++/C++ Compiler (`icx`/`icpx`) can be used instead of MSVC's
-`cl.exe` for improved performance on Intel CPUs. ICX operates in MSVC-compatible
+`cl.exe` for improved performance on Intel CPUs (with no change to performance on AMD CPUs). ICX operates in MSVC-compatible
 (clang-cl) mode, so FFmpeg is still configured with `--toolchain=msvc` while
 overriding `--cc=icx --cxx=icpx`.
 
