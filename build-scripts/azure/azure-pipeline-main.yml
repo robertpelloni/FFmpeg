@@ -23,6 +23,10 @@ parameters:
     displayName: 'Intel Compiler (ICX)'
     type: boolean
     default: false
+  - name: icx_installer_url
+    displayName: 'Intel ICX Installer URL (offline .exe)'
+    type: string
+    default: ''
   - name: nv_codec_headers
     displayName: 'NV CODEC HEADERS version(tag)'
     type: string
@@ -90,6 +94,7 @@ stages:
         - template: win.yml
           parameters:
             icx: ${{ parameters.icx }}
+            icx_installer_url: ${{ parameters.icx_installer_url }}
 
   - ${{ if eq(parameters.linux, true) }}:
     - job: Ubuntu22_04

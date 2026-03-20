@@ -3,6 +3,10 @@ parameters:
     displayName: 'Intel Compiler (ICX)'
     type: boolean
     default: false
+  - name: icx_installer_url
+    displayName: 'Intel ICX Installer URL (offline .exe)'
+    type: string
+    default: ''
 
 steps:
   - checkout: self
@@ -36,15 +40,19 @@ steps:
         C:\msys64\msys2_shell.cmd -defterm -no-start -mingw64 -c "$(cygpath '$(Build.SourcesDirectory)/FFmpeg/build-scripts/win/build_win.sh')"
       displayName: Set up MSVC toolchain and build
 
-# intel compiler(icl/icx)
   - ${{ if eq(parameters.icx, true) }}:
     - script: |
+        set "ICX_INSTALLER_URL=${{ parameters.icx_installer_url }}"
+        if "%ICX_INSTALLER_URL%"=="" set "ICX_INSTALLER_URL=$(ICX_INSTALLER_URL)"
+        call "$(Build.SourcesDirectory)\FFmpeg\build-scripts\win\install-icx.bat"
+      displayName: Install Intel oneAPI ICX compiler (if needed)
+
+    - script: |
         call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
-        
+
         cd /d "C:\msys64"
         set MSYSTEM=MINGW64
         C:\msys64\msys2_shell.cmd -defterm -no-start -use-full-path -mingw64 -c "$(cygpath '$(Build.SourcesDirectory)/FFmpeg/build-scripts/win/build_win.sh')" --icx --no-warnings
-
       displayName: Set up Intel oneAPI toolchain and build
 
   - bash: |
