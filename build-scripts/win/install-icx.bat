@@ -15,7 +15,7 @@ set "SETVARS=%ONEAPI_ROOT%\setvars.bat"
 set "INSTALLER_PATH=%TEMP%\icx_installer.exe"
 
 if exist "%SETVARS%" (
-    echo Intel oneAPI already installed at %ONEAPI_ROOT%
+    echo Intel oneAPI already installed at !ONEAPI_ROOT!
     exit /b 0
 )
 
@@ -49,7 +49,7 @@ if %errorlevel% neq 0 (
 
 if not exist "%SETVARS%" (
     echo ERROR: Installation appeared to succeed but setvars.bat not found at:
-    echo   %SETVARS%
+    echo   !SETVARS!
     del /f /q "%INSTALLER_PATH%" 2>nul
     exit /b 1
 )
