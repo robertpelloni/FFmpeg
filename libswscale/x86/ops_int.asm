@@ -163,6 +163,16 @@ process_fn 4
 ; For the clean multiples (e.g. rgba -> argb), we also define AVX2 and AVX512
 ; versions that can handle a larger number of bytes at once.
 
+%macro MOVSIZE 3 ; size, dst, src
+    %if %1 <= 4
+        movd %2, %3
+    %elif %1 <= 8
+        movq %2, %3
+    %else
+        movu %2, %3
+    %endif
+%endmacro
+
 %macro packed_shuffle 2 ; size_in, size_out
 cglobal packed_shuffle%1_%2, 6, 10, 2, \
     exec, shuffle, bx, y, bxend, yend, src, dst, src_stride, dst_stride
@@ -185,15 +195,9 @@ cglobal packed_shuffle%1_%2, 6, 10, 2, \
             sub srcq, srcidxq
             sub dstq, dstidxq
 .loop:
-    %if %1 <= 4
-            movd m0, [srcq + srcidxq]
-    %elif %1 <= 8
-            movq m0, [srcq + srcidxq]
-    %else
-            movu m0, [srcq + srcidxq]
-    %endif
+            MOVSIZE %1, m0, [srcq + srcidxq]
             pshufb m0, m1
-            movu [dstq + dstidxq], m0
+            MOVSIZE %2, [dstq + dstidxq], m0
             add srcidxq, %1
 IF %1 != %2,add dstidxq, %2
             jnz .loop
@@ -598,47 +602,45 @@ IF V2,  mova %3, %2
         CONTINUE tmp0q
 %endmacro
 
-; note: the pattern is inverted for these functions; i.e. X=1 implies that we
-; *keep* the X component, not that we clear it
 %macro clear_generic 0
 op clear
             LOAD_CONT tmp0q
 %if cpuflag(avx2)
-    IF !X,  vpbroadcastd mx, [implq + SwsOpImpl.priv + 0]
-    IF !Y,  vpbroadcastd my, [implq + SwsOpImpl.priv + 4]
-    IF !Z,  vpbroadcastd mz, [implq + SwsOpImpl.priv + 8]
-    IF !W,  vpbroadcastd mw, [implq + SwsOpImpl.priv + 12]
+    IF X,   vpbroadcastd mx, [implq + SwsOpImpl.priv + 0]
+    IF Y,   vpbroadcastd my, [implq + SwsOpImpl.priv + 4]
+    IF Z,   vpbroadcastd mz, [implq + SwsOpImpl.priv + 8]
+    IF W,   vpbroadcastd mw, [implq + SwsOpImpl.priv + 12]
 %else ; !cpuflag(avx2)
-    IF !X,  movd mx, [implq + SwsOpImpl.priv + 0]
-    IF !Y,  movd my, [implq + SwsOpImpl.priv + 4]
-    IF !Z,  movd mz, [implq + SwsOpImpl.priv + 8]
-    IF !W,  movd mw, [implq + SwsOpImpl.priv + 12]
-    IF !X,  pshufd mx, mx, 0
-    IF !Y,  pshufd my, my, 0
-    IF !Z,  pshufd mz, mz, 0
-    IF !W,  pshufd mw, mw, 0
+    IF X,   movd mx, [implq + SwsOpImpl.priv + 0]
+    IF Y,   movd my, [implq + SwsOpImpl.priv + 4]
+    IF Z,   movd mz, [implq + SwsOpImpl.priv + 8]
+    IF W,   movd mw, [implq + SwsOpImpl.priv + 12]
+    IF X,   pshufd mx, mx, 0
+    IF Y,   pshufd my, my, 0
+    IF Z,   pshufd mz, mz, 0
+    IF W,   pshufd mw, mw, 0
 %endif
 %if V2
-    IF !X,  mova mx2, mx
-    IF !Y,  mova my2, my
-    IF !Z,  mova mz2, mz
-    IF !W,  mova mw2, mw
+    IF X,   mova mx2, mx
+    IF Y,   mova my2, my
+    IF Z,   mova mz2, mz
+    IF W,   mova mw2, mw
 %endif
             CONTINUE tmp0q
 %endmacro
 
 %macro clear_funcs 0
-        decl_pattern 1, 1, 1, 0, clear_generic
-        decl_pattern 0, 1, 1, 1, clear_generic
-        decl_pattern 0, 0, 1, 1, clear_generic
-        decl_pattern 1, 0, 1, 1, clear_generic
-        decl_pattern 1, 0, 0, 1, clear_generic
-        decl_pattern 1, 1, 0, 0, clear_generic
-        decl_pattern 0, 1, 0, 1, clear_generic
-        decl_pattern 1, 0, 1, 0, clear_generic
+        decl_pattern 0, 0, 0, 1, clear_generic
         decl_pattern 1, 0, 0, 0, clear_generic
+        decl_pattern 1, 1, 0, 0, clear_generic
         decl_pattern 0, 1, 0, 0, clear_generic
-        decl_pattern 0, 0, 1, 0, clear_generic
+        decl_pattern 0, 1, 1, 0, clear_generic
+        decl_pattern 0, 0, 1, 1, clear_generic
+        decl_pattern 1, 0, 1, 0, clear_generic
+        decl_pattern 0, 1, 0, 1, clear_generic
+        decl_pattern 0, 1, 1, 1, clear_generic
+        decl_pattern 1, 0, 1, 1, clear_generic
+        decl_pattern 1, 1, 0, 1, clear_generic
 %endmacro
 
 ;---------------------------------------------------------
