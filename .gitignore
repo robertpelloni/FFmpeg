@@ -1,3 +1,43 @@
+<<<<<<< HEAD
+*.a
+*.o
+*.objs
+*.o.*
+*.d
+*.def
+*.dll
+*.dylib
+*.exe
+*.exp
+*.gcda
+*.gcno
+*.h.c
+*.ilk
+*.lib
+*.pc
+*.pdb
+*.so
+*.so.*
+*.swp
+*.ver
+*.version
+*.metal.air
+*.metallib
+*.metallib.c
+*.spv
+*.spv.c
+*.spv.gz
+*.gen.c
+*.gen.S
+*.ptx
+*.ptx.c
+*.ptx.gz
+*_g
+\#*
+.\#*
+/.config
+/.version
+=======
 # FFmpeg .gitignore
 #
 # List of files/directories that should be ignored by git.
@@ -5,6 +45,7 @@
 # and Topaz Video AI specific paths.
 
 # Default gitignore from upstream
+>>>>>>> topaz/develop
 /ffmpeg
 /ffplay
 /ffprobe

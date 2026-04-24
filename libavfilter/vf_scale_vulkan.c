@@ -389,7 +389,7 @@ static int scale_vulkan_filter_frame(AVFilterLink *link, AVFrame *in)
         }
 
         RET(ff_vk_filter_process_simple(&s->vkctx, &s->e, &s->shd, out, in,
-                                        s->sampler, &s->opts, sizeof(s->opts)));
+                                        s->sampler, 1, &s->opts, sizeof(s->opts)));
     } else {
         err = sws_scale_frame(s->sws, out, in);
         if (err < 0)
@@ -447,7 +447,8 @@ static int scale_vulkan_config_output(AVFilterLink *outlink)
             av_log(avctx, AV_LOG_ERROR, "Scaling is not supported with debayering\n");
             return AVERROR_PATCHWELCOME;
         }
-    } else if (inlink->w == outlink->w || inlink->w == outlink->w) {
+    } else if ((inlink->w == outlink->w || inlink->h == outlink->h) &&
+               (s->vkctx.input_format != s->vkctx.output_format)) {
         s->sws = sws_alloc_context();
         if (!s->sws)
             return AVERROR(ENOMEM);
