@@ -15,7 +15,7 @@ steps:
   - template: set_tools_and_deps.yml
     parameters:
       OS: 'win'
-      SHOULD_RESTORE_CONAN_CACHE: true
+      SHOULD_RESTORE_CONAN_CACHE: false
 
   - bash: |
       cd "$(Build.SourcesDirectory)/FFmpeg"
