@@ -22,7 +22,6 @@
 #include "libavutil/eval.h"
 #include "libavutil/fifo.h"
 #include "libavutil/file.h"
-#include "libavutil/frame.h"
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
@@ -51,7 +50,6 @@ static inline AVFrame *pl_get_mapped_avframe(const struct pl_frame *frame)
 typedef struct pl_options_t {
     // Backwards compatibility shim of this struct
     struct pl_render_params params;
-    struct pl_deinterlace_params deinterlace_params;
     struct pl_deband_params deband_params;
     struct pl_sigmoid_params sigmoid_params;
     struct pl_color_adjustment color_adjustment;
@@ -190,7 +188,7 @@ typedef struct LibplaceboContext {
     /* settings */
     char *out_format_string;
     enum AVPixelFormat out_format;
-    uint8_t fillcolor[4];
+    char *fillcolor;
     double var_values[VAR_VARS_NB];
     char *w_expr;
     char *h_expr;
@@ -237,18 +235,15 @@ typedef struct LibplaceboContext {
     char *upscaler;
     char *downscaler;
     char *frame_mixer;
+    int lut_entries;
     float antiringing;
     int sigmoid;
     int skip_aa;
+    float polar_cutoff;
     int disable_linear;
     int disable_builtin;
     int force_dither;
     int disable_fbos;
-
-    /* pl_deinterlace_params */
-    int deinterlace;
-    int skip_spatial_check;
-    int send_fields;
 
     /* pl_deband_params */
     int deband;
@@ -268,6 +263,7 @@ typedef struct LibplaceboContext {
     /* pl_peak_detect_params */
     int peakdetect;
     float smoothing;
+    float min_peak;
     float scene_low;
     float scene_high;
     float percentile;
@@ -428,11 +424,9 @@ static int update_settings(AVFilterContext *ctx)
     AVDictionaryEntry *e = NULL;
     pl_options opts = s->opts;
     int gamut_mode = s->gamut_mode;
+    uint8_t color_rgba[4];
 
-    opts->deinterlace_params = *pl_deinterlace_params(
-        .algo = s->deinterlace,
-        .skip_spatial_check = s->skip_spatial_check,
-    );
+    RET(av_parse_color(color_rgba, s->fillcolor, -1, s));
 
     opts->deband_params = *pl_deband_params(
         .iterations = s->deband_iterations,
@@ -456,6 +450,7 @@ static int update_settings(AVFilterContext *ctx)
     opts->peak_detect_params = (struct pl_peak_detect_params) {
         PL_PEAK_DETECT_DEFAULTS
         .smoothing_period = s->smoothing,
+        .minimum_peak = s->min_peak,
         .scene_threshold_low = s->scene_low,
         .scene_threshold_high = s->scene_high,
 #if PL_API_VER >= 263
@@ -491,17 +486,16 @@ static int update_settings(AVFilterContext *ctx)
     opts->params = (struct pl_render_params) {
         PL_RENDER_DEFAULTS
         .antiringing_strength = s->antiringing,
-        .background_transparency = 1.0f - (float) s->fillcolor[3] / UINT8_MAX,
+        .background_transparency = 1.0f - (float) color_rgba[3] / UINT8_MAX,
         .background_color = {
-            (float) s->fillcolor[0] / UINT8_MAX,
-            (float) s->fillcolor[1] / UINT8_MAX,
-            (float) s->fillcolor[2] / UINT8_MAX,
+            (float) color_rgba[0] / UINT8_MAX,
+            (float) color_rgba[1] / UINT8_MAX,
+            (float) color_rgba[2] / UINT8_MAX,
         },
 #if PL_API_VER >= 277
         .corner_rounding = s->corner_rounding,
 #endif
 
-        .deinterlace_params = &opts->deinterlace_params,
         .deband_params = s->deband ? &opts->deband_params : NULL,
         .sigmoid_params = s->sigmoid ? &opts->sigmoid_params : NULL,
         .color_adjustment = &opts->color_adjustment,
@@ -514,6 +508,7 @@ static int update_settings(AVFilterContext *ctx)
         .num_hooks = s->num_hooks,
 
         .skip_anti_aliasing = s->skip_aa,
+        .polar_cutoff = s->polar_cutoff,
         .disable_linear_scaling = s->disable_linear,
         .disable_builtin_scalers = s->disable_builtin,
         .force_dither = s->force_dither,
@@ -982,7 +977,7 @@ static void update_crops(AVFilterContext *ctx, LibplaceboInput *in,
 /* Construct and emit an output frame for a given timestamp */
 static int output_frame(AVFilterContext *ctx, int64_t pts)
 {
-    int err = 0, ok, changed = 0;
+    int err = 0, ok, changed_csp;
     LibplaceboContext *s = ctx->priv;
     pl_options opts = s->opts;
     AVFilterLink *outlink = ctx->outputs[0];
@@ -1042,7 +1037,6 @@ static int output_frame(AVFilterContext *ctx, int64_t pts)
          * output colorspace defaults */
         out->color_primaries = AVCOL_PRI_BT2020;
         out->color_trc = AVCOL_TRC_SMPTE2084;
-        changed |= AV_SIDE_DATA_PROP_COLOR_DEPENDENT;
     }
 
     if (s->color_trc >= 0)
@@ -1052,13 +1046,21 @@ static int output_frame(AVFilterContext *ctx, int64_t pts)
     if (s->chroma_location >= 0)
         out->chroma_location = s->chroma_location;
 
-    /* Strip side data if no longer relevant */
-    if (out->width != ref->width || out->height != ref->height)
-        changed |= AV_SIDE_DATA_PROP_SIZE_DEPENDENT;
-    if (ref->color_trc != out->color_trc || ref->color_primaries != out->color_primaries)
-        changed |= AV_SIDE_DATA_PROP_COLOR_DEPENDENT;
-    av_frame_side_data_remove_by_props(&out->side_data, &out->nb_side_data, changed);
+    changed_csp = ref->colorspace      != out->colorspace     ||
+                  ref->color_range     != out->color_range    ||
+                  ref->color_trc       != out->color_trc      ||
+                  ref->color_primaries != out->color_primaries;
 
+    /* Strip side data if no longer relevant */
+    if (changed_csp) {
+        av_frame_remove_side_data(out, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
+        av_frame_remove_side_data(out, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL);
+        av_frame_remove_side_data(out, AV_FRAME_DATA_ICC_PROFILE);
+    }
+    if (s->apply_dovi || changed_csp) {
+        av_frame_remove_side_data(out, AV_FRAME_DATA_DOVI_RPU_BUFFER);
+        av_frame_remove_side_data(out, AV_FRAME_DATA_DOVI_METADATA);
+    }
     if (s->apply_filmgrain)
         av_frame_remove_side_data(out, AV_FRAME_DATA_FILM_GRAIN_PARAMS);
 
@@ -1214,21 +1216,12 @@ static int handle_input(AVFilterContext *ctx, LibplaceboInput *input)
             .map         = map_frame,
             .unmap       = unmap_frame,
             .discard     = discard_frame,
-        };
-
-        in->opaque = s;
-        pl_queue_push(input->queue, &src);
+        });
 
         if (!s->fps.num) {
             /* Internally queue an output frame for the same PTS */
             pts = av_rescale_q(in->pts, inlink->time_base, outlink->time_base);
             av_fifo_write(input->out_pts, &pts, 1);
-
-            if (s->send_fields && src.first_field != PL_FIELD_NONE) {
-                /* Queue the second field for interlaced content */
-                pts += av_rescale_q(in->duration, inlink->time_base, outlink->time_base) / 2;
-                av_fifo_write(input->out_pts, &pts, 1);
-            }
         }
     }
 
@@ -1407,13 +1400,7 @@ static int libplacebo_query_format(const AVFilterContext *ctx,
         goto fail;
     }
 
-    for (int i = 0; i < s->nb_inputs; i++) {
-        if (i > 0) {
-            /* Duplicate the format list for each subsequent input */
-            infmts = NULL;
-            for (int n = 0; n < cfg_in[0]->formats->nb_formats; n++)
-                RET(ff_add_format(&infmts, cfg_in[0]->formats->formats[n]));
-        }
+    for (int i = 0; i < s->nb_inputs; i++)
         RET(ff_formats_ref(infmts, &cfg_in[i]->formats));
         RET(ff_formats_ref(ff_all_color_spaces(), &cfg_in[i]->color_spaces));
         RET(ff_formats_ref(ff_all_color_ranges(), &cfg_in[i]->color_ranges));
@@ -1421,6 +1408,10 @@ static int libplacebo_query_format(const AVFilterContext *ctx,
     }
 
     RET(ff_formats_ref(outfmts, &cfg_out[0]->formats));
+
+    /* Set colorspace properties */
+    RET(ff_formats_ref(ff_all_color_spaces(), &cfg_in[0]->color_spaces));
+    RET(ff_formats_ref(ff_all_color_ranges(), &cfg_in[0]->color_ranges));
 
     outfmts = s->colorspace > 0 ? ff_make_formats_list_singleton(s->colorspace)
                                 : ff_all_color_spaces();
@@ -1562,13 +1553,6 @@ static int libplacebo_config_output(AVFilterLink *outlink)
             outlink->time_base = av_gcd_q(outlink->time_base,
                                           avctx->inputs[i]->time_base,
                                           AV_TIME_BASE / 2, AV_TIME_BASE_Q);
-        }
-
-        if (s->deinterlace && s->send_fields) {
-            const AVRational q2 = { 2, 1 };
-            ol->frame_rate = av_mul_q(ol->frame_rate, q2);
-            /* Ensure output frame timestamps are divisible by two */
-            outlink->time_base = av_div_q(outlink->time_base, q2);
         }
     }
 
@@ -1740,6 +1724,7 @@ static const AVOption libplacebo_options[] = {
     { "upscaler", "Upscaler function", OFFSET(upscaler), AV_OPT_TYPE_STRING, {.str = "spline36"}, .flags = DYNAMIC },
     { "downscaler", "Downscaler function", OFFSET(downscaler), AV_OPT_TYPE_STRING, {.str = "mitchell"}, .flags = DYNAMIC },
     { "frame_mixer", "Frame mixing function", OFFSET(frame_mixer), AV_OPT_TYPE_STRING, {.str = "none"}, .flags = DYNAMIC },
+    { "lut_entries", "Number of scaler LUT entries", OFFSET(lut_entries), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 256, DYNAMIC },
     { "antiringing", "Antiringing strength (for non-EWA filters)", OFFSET(antiringing), AV_OPT_TYPE_FLOAT, {.dbl = 0.0}, 0.0, 1.0, DYNAMIC },
     { "sigmoid", "Enable sigmoid upscaling", OFFSET(sigmoid), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, DYNAMIC },
     { "apply_filmgrain", "Apply film grain metadata", OFFSET(apply_filmgrain), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, DYNAMIC },
@@ -1825,6 +1810,7 @@ static const AVOption libplacebo_options[] = {
 
     /* Performance/quality tradeoff options */
     { "skip_aa", "Skip anti-aliasing", OFFSET(skip_aa), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DYNAMIC },
+    { "polar_cutoff", "Polar LUT cutoff", OFFSET(polar_cutoff), AV_OPT_TYPE_FLOAT, {.dbl = 0}, 0.0, 1.0, DYNAMIC },
     { "disable_linear", "Disable linear scaling", OFFSET(disable_linear), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DYNAMIC },
     { "disable_builtin", "Disable built-in scalers", OFFSET(disable_builtin), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DYNAMIC },
     { "force_dither", "Force dithering", OFFSET(force_dither), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, DYNAMIC },
@@ -1842,11 +1828,9 @@ static const AVFilterPad libplacebo_outputs[] = {
     },
 };
 
-const FFFilter ff_vf_libplacebo = {
-    .p.name         = "libplacebo",
-    .p.description  = NULL_IF_CONFIG_SMALL("Apply various GPU filters from libplacebo"),
-    .p.priv_class   = &libplacebo_class,
-    .p.flags        = AVFILTER_FLAG_HWDEVICE | AVFILTER_FLAG_DYNAMIC_INPUTS,
+const AVFilter ff_vf_libplacebo = {
+    .name           = "libplacebo",
+    .description    = NULL_IF_CONFIG_SMALL("Apply various GPU filters from libplacebo"),
     .priv_size      = sizeof(LibplaceboContext),
     .init           = &libplacebo_init,
     .uninit         = &libplacebo_uninit,
@@ -1854,5 +1838,7 @@ const FFFilter ff_vf_libplacebo = {
     .process_command = &libplacebo_process_command,
     FILTER_OUTPUTS(libplacebo_outputs),
     FILTER_QUERY_FUNC2(libplacebo_query_format),
+    .priv_class     = &libplacebo_class,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
+    .flags          = AVFILTER_FLAG_HWDEVICE | AVFILTER_FLAG_DYNAMIC_INPUTS,
 };

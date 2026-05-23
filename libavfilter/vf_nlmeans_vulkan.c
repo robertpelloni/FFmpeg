@@ -44,7 +44,8 @@ typedef struct NLMeansVulkanContext {
 
     int initialized;
     FFVkExecPool e;
-    AVVulkanDeviceQueueFamily *qf;
+    FFVkQueueFamilyCtx qf;
+    VkSampler sampler;
 
     AVBufferPool *integral_buf_pool;
     AVBufferPool *ws_buf_pool;
@@ -335,12 +336,9 @@ static av_cold int init_filter(AVFilterContext *ctx)
 
     s->opts.t = FFMIN(s->opts.t, (FFALIGN(s->nb_offsets, TYPE_ELEMS) / TYPE_ELEMS));
 
-    s->qf = ff_vk_qf_find(vkctx, VK_QUEUE_COMPUTE_BIT, 0);
-    if (!s->qf) {
-        av_log(ctx, AV_LOG_ERROR, "Device has no compute queues\n");
-        err = AVERROR(ENOTSUP);
-        goto fail;
-    }
+    ff_vk_qf_init(vkctx, &s->qf, VK_QUEUE_COMPUTE_BIT);
+    RET(ff_vk_exec_pool_init(vkctx, &s->qf, &s->e, 1, 0, 0, 0, NULL));
+    RET(ff_vk_init_sampler(vkctx, &s->sampler, 1, VK_FILTER_NEAREST));
 
     RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, 1, 0, 0, 0, NULL));
 
@@ -543,7 +541,7 @@ static int nlmeans_vulkan_filter_frame(AVFilterLink *link, AVFrame *in)
                         VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
                         VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
                         VK_ACCESS_SHADER_READ_BIT,
-                        VK_IMAGE_LAYOUT_GENERAL,
+                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                         VK_QUEUE_FAMILY_IGNORED);
 
     /* Output frame prep */
@@ -591,7 +589,8 @@ static int nlmeans_vulkan_filter_frame(AVFilterLink *link, AVFrame *in)
 
     /* Update denoise descriptors */
     ff_vk_shader_update_img_array(vkctx, exec, &s->shd_denoise, in, in_views, 0, 0,
-                                  VK_IMAGE_LAYOUT_GENERAL, VK_NULL_HANDLE);
+                                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                  s->sampler);
     ff_vk_shader_update_img_array(vkctx, exec, &s->shd_denoise, out, out_views, 0, 1,
                                   VK_IMAGE_LAYOUT_GENERAL, VK_NULL_HANDLE);
     RET(ff_vk_shader_update_desc_buffer(&s->vkctx, exec, &s->shd_denoise, 1, 0, 0,
@@ -748,6 +747,7 @@ static void nlmeans_vulkan_uninit(AVFilterContext *avctx)
 {
     NLMeansVulkanContext *s = avctx->priv;
     FFVulkanContext *vkctx = &s->vkctx;
+    FFVulkanFunctions *vk = &vkctx->vkfn;
 
     ff_vk_exec_pool_free(vkctx, &s->e);
     ff_vk_shader_free(vkctx, &s->shd_horizontal);
@@ -757,6 +757,10 @@ static void nlmeans_vulkan_uninit(AVFilterContext *avctx)
 
     av_buffer_pool_uninit(&s->integral_buf_pool);
     av_buffer_pool_uninit(&s->ws_buf_pool);
+
+    if (s->sampler)
+        vk->DestroySampler(vkctx->hwctx->act_dev, s->sampler,
+                           vkctx->hwctx->alloc);
 
     ff_vk_uninit(&s->vkctx);
 
@@ -806,16 +810,16 @@ static const AVFilterPad nlmeans_vulkan_outputs[] = {
     },
 };
 
-const FFFilter ff_vf_nlmeans_vulkan = {
-    .p.name         = "nlmeans_vulkan",
-    .p.description  = NULL_IF_CONFIG_SMALL("Non-local means denoiser (Vulkan)"),
-    .p.priv_class   = &nlmeans_vulkan_class,
-    .p.flags        = AVFILTER_FLAG_HWDEVICE,
+const AVFilter ff_vf_nlmeans_vulkan = {
+    .name           = "nlmeans_vulkan",
+    .description    = NULL_IF_CONFIG_SMALL("Non-local means denoiser (Vulkan)"),
     .priv_size      = sizeof(NLMeansVulkanContext),
     .init           = &ff_vk_filter_init,
     .uninit         = &nlmeans_vulkan_uninit,
     FILTER_INPUTS(nlmeans_vulkan_inputs),
     FILTER_OUTPUTS(nlmeans_vulkan_outputs),
     FILTER_SINGLE_PIXFMT(AV_PIX_FMT_VULKAN),
+    .priv_class     = &nlmeans_vulkan_class,
+    .flags          = AVFILTER_FLAG_HWDEVICE,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
 };

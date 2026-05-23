@@ -34,8 +34,9 @@ typedef struct OverlayVulkanContext {
 
     int initialized;
     FFVkExecPool e;
-    AVVulkanDeviceQueueFamily *qf;
+    FFVkQueueFamilyCtx qf;
     FFVulkanShader shd;
+    VkSampler sampler;
 
     /* Push constants / options */
     struct {
@@ -213,9 +214,14 @@ static void overlay_vulkan_uninit(AVFilterContext *avctx)
 {
     OverlayVulkanContext *s = avctx->priv;
     FFVulkanContext *vkctx = &s->vkctx;
+    FFVulkanFunctions *vk = &vkctx->vkfn;
 
     ff_vk_exec_pool_free(vkctx, &s->e);
     ff_vk_shader_free(vkctx, &s->shd);
+
+    if (s->sampler)
+        vk->DestroySampler(vkctx->hwctx->act_dev, s->sampler,
+                           vkctx->hwctx->alloc);
 
     ff_vk_uninit(&s->vkctx);
     ff_framesync_uninit(&s->fs);
@@ -254,11 +260,9 @@ static const AVFilterPad overlay_vulkan_outputs[] = {
     },
 };
 
-const FFFilter ff_vf_overlay_vulkan = {
-    .p.name         = "overlay_vulkan",
-    .p.description  = NULL_IF_CONFIG_SMALL("Overlay a source on top of another"),
-    .p.priv_class   = &overlay_vulkan_class,
-    .p.flags        = AVFILTER_FLAG_HWDEVICE,
+const AVFilter ff_vf_overlay_vulkan = {
+    .name           = "overlay_vulkan",
+    .description    = NULL_IF_CONFIG_SMALL("Overlay a source on top of another"),
     .priv_size      = sizeof(OverlayVulkanContext),
     .init           = &overlay_vulkan_init,
     .uninit         = &overlay_vulkan_uninit,
@@ -266,5 +270,7 @@ const FFFilter ff_vf_overlay_vulkan = {
     FILTER_INPUTS(overlay_vulkan_inputs),
     FILTER_OUTPUTS(overlay_vulkan_outputs),
     FILTER_SINGLE_PIXFMT(AV_PIX_FMT_VULKAN),
+    .priv_class     = &overlay_vulkan_class,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
+    .flags          = AVFILTER_FLAG_HWDEVICE,
 };

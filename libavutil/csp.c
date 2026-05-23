@@ -59,7 +59,7 @@ const struct AVLumaCoefficients *av_csp_luma_coeffs_from_avcsp(enum AVColorSpace
 {
     const AVLumaCoefficients *coeffs;
 
-    if ((unsigned)csp >= AVCOL_SPC_NB)
+    if (csp >= AVCOL_SPC_NB)
         return NULL;
     coeffs = &luma_coefficients[csp];
     if (!coeffs->cr.num)
@@ -683,7 +683,7 @@ static const av_csp_eotf_function eotf_funcs[AVCOL_TRC_NB] = {
 
 av_csp_eotf_function av_csp_itu_eotf(enum AVColorTransferCharacteristic trc)
 {
-    if ((unsigned)trc >= AVCOL_TRC_NB)
+    if (trc < 0 || trc >= AVCOL_TRC_NB)
         return NULL;
     return eotf_funcs[trc];
 }
@@ -709,7 +709,7 @@ static const av_csp_eotf_function eotf_inv_funcs[AVCOL_TRC_NB] = {
 
 av_csp_eotf_function av_csp_itu_eotf_inv(enum AVColorTransferCharacteristic trc)
 {
-    if ((unsigned)trc >= AVCOL_TRC_NB)
+    if (trc < 0 || trc >= AVCOL_TRC_NB)
         return NULL;
     return eotf_inv_funcs[trc];
 }

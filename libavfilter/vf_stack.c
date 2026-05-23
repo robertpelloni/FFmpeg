@@ -490,34 +490,34 @@ static const AVFilterPad outputs[] = {
 
 #if CONFIG_HSTACK_FILTER
 
-const FFFilter ff_vf_hstack = {
-    .p.name        = "hstack",
-    .p.description = NULL_IF_CONFIG_SMALL("Stack video inputs horizontally."),
-    .p.priv_class  = &stack_class,
-    .p.flags       = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_SLICE_THREADS,
+const AVFilter ff_vf_hstack = {
+    .name          = "hstack",
+    .description   = NULL_IF_CONFIG_SMALL("Stack video inputs horizontally."),
+    .priv_class    = &stack_class,
     .priv_size     = sizeof(StackContext),
     FILTER_OUTPUTS(outputs),
     FILTER_QUERY_FUNC2(query_formats),
     .init          = init,
     .uninit        = uninit,
     .activate      = activate,
+    .flags         = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_SLICE_THREADS,
 };
 
 #endif /* CONFIG_HSTACK_FILTER */
 
 #if CONFIG_VSTACK_FILTER
 
-const FFFilter ff_vf_vstack = {
-    .p.name        = "vstack",
-    .p.description = NULL_IF_CONFIG_SMALL("Stack video inputs vertically."),
-    .p.priv_class  = &stack_class,
-    .p.flags       = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_SLICE_THREADS,
+const AVFilter ff_vf_vstack = {
+    .name          = "vstack",
+    .description   = NULL_IF_CONFIG_SMALL("Stack video inputs vertically."),
+    .priv_class    = &stack_class,
     .priv_size     = sizeof(StackContext),
     FILTER_OUTPUTS(outputs),
     FILTER_QUERY_FUNC2(query_formats),
     .init          = init,
     .uninit        = uninit,
     .activate      = activate,
+    .flags         = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_SLICE_THREADS,
 };
 
 #endif /* CONFIG_VSTACK_FILTER */
@@ -535,17 +535,17 @@ static const AVOption xstack_options[] = {
 
 AVFILTER_DEFINE_CLASS(xstack);
 
-const FFFilter ff_vf_xstack = {
-    .p.name        = "xstack",
-    .p.description = NULL_IF_CONFIG_SMALL("Stack video inputs into custom layout."),
-    .p.priv_class  = &xstack_class,
-    .p.flags       = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_SLICE_THREADS,
+const AVFilter ff_vf_xstack = {
+    .name          = "xstack",
+    .description   = NULL_IF_CONFIG_SMALL("Stack video inputs into custom layout."),
     .priv_size     = sizeof(StackContext),
+    .priv_class    = &xstack_class,
     FILTER_OUTPUTS(outputs),
     FILTER_QUERY_FUNC2(query_formats),
     .init          = init,
     .uninit        = uninit,
     .activate      = activate,
+    .flags         = AVFILTER_FLAG_DYNAMIC_INPUTS | AVFILTER_FLAG_SLICE_THREADS,
 };
 
 #endif /* CONFIG_XSTACK_FILTER */

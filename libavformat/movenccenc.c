@@ -589,16 +589,8 @@ int ff_mov_cenc_write_sinf_tag(MOVTrack* track, AVIOContext *pb, uint8_t* kid)
     return update_size(pb, pos);
 }
 
-static const CodedBitstreamUnitType decompose_unit_types[] = {
-    AV1_OBU_TEMPORAL_DELIMITER,
-    AV1_OBU_SEQUENCE_HEADER,
-    AV1_OBU_FRAME_HEADER,
-    AV1_OBU_TILE_GROUP,
-    AV1_OBU_FRAME,
-};
-
 int ff_mov_cenc_init(MOVMuxCencContext* ctx, uint8_t* encryption_key,
-                     int use_subsamples, enum AVCodecID codec_id, int bitexact)
+                     int use_subsamples, int bitexact)
 {
     int ret;
 
@@ -618,15 +610,6 @@ int ff_mov_cenc_init(MOVMuxCencContext* ctx, uint8_t* encryption_key,
 
     ctx->use_subsamples = use_subsamples;
 
-    if (codec_id == AV_CODEC_ID_AV1) {
-        ret = ff_lavf_cbs_init(&ctx->cbc, codec_id, NULL);
-        if (ret < 0)
-            return ret;
-
-        ctx->cbc->decompose_unit_types    = decompose_unit_types;
-        ctx->cbc->nb_decompose_unit_types = FF_ARRAY_ELEMS(decompose_unit_types);
-    }
-
     return 0;
 }
 
@@ -641,8 +624,4 @@ void ff_mov_cenc_free(MOVMuxCencContext* ctx)
     av_aes_ctr_free(ctx->aes_ctr);
     av_freep(&ctx->auxiliary_info);
     av_freep(&ctx->auxiliary_info_sizes);
-
-    av_freep(&ctx->tile_group_sizes);
-    ff_lavf_cbs_fragment_free(&ctx->temporal_unit);
-    ff_lavf_cbs_close(&ctx->cbc);
 }

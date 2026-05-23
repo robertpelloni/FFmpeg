@@ -63,16 +63,6 @@ my $program_version_6_8 = $program_version_num >= 6.008000;
 # no navigation elements
 ff_set_from_init_file('HEADERS', 0);
 
-my %sectioning_commands = %Texinfo::Common::sectioning_commands;
-if (scalar(keys(%sectioning_commands)) == 0) {
-  %sectioning_commands = %Texinfo::Commands::sectioning_heading_commands;
-}
-
-my %root_commands = %Texinfo::Common::root_commands;
-if (scalar(keys(%root_commands)) == 0) {
-  %root_commands = %Texinfo::Commands::root_commands;
-}
-
 sub ffmpeg_heading_command($$$$$)
 {
     my $self = shift;
@@ -90,9 +80,6 @@ sub ffmpeg_heading_command($$$$$)
         return $result;
     }
 
-    # no need to set it as the $element_id is output unconditionally
-    my $heading_id;
-
     my $element_id = $self->command_id($command);
     $result .= "<a name=\"$element_id\"></a>\n"
         if (defined($element_id) and $element_id ne '');
@@ -100,23 +87,16 @@ sub ffmpeg_heading_command($$$$$)
     print STDERR "Process $command "
         .Texinfo::Structuring::_print_root_command_texi($command)."\n"
             if ($self->get_conf('DEBUG'));
-    my $output_unit;
-    if ($root_commands{$command->{'cmdname'}}) {
-        if ($command->{'associated_unit'}) {
-          $output_unit = $command->{'associated_unit'};
-        } elsif ($command->{'structure'}
-                 and $command->{'structure'}->{'associated_unit'}) {
-          $output_unit = $command->{'structure'}->{'associated_unit'};
-        } elsif ($command->{'parent'}
-                 and $command->{'parent'}->{'type'}
-                 and $command->{'parent'}->{'type'} eq 'element') {
-          $output_unit = $command->{'parent'};
-        }
+    my $element;
+    if ($Texinfo::Common::root_commands{$command->{'cmdname'}}
+        and $command->{'parent'}
+        and $command->{'parent'}->{'type'}
+        and $command->{'parent'}->{'type'} eq 'element') {
+        $element = $command->{'parent'};
     }
-
-    if ($output_unit) {
+    if ($element) {
         $result .= &{get_formatting_function($self, 'format_element_header')}($self, $cmdname,
-                                                       $command, $output_unit);
+                                                       $command, $element);
     }
 
     my $heading_level;
@@ -192,7 +172,7 @@ sub ffmpeg_heading_command($$$$$)
     return $result;
 }
 
-foreach my $command (keys(%sectioning_commands), 'node') {
+foreach my $command (keys(%Texinfo::Common::sectioning_commands), 'node') {
     texinfo_register_command_formatting($command, \&ffmpeg_heading_command);
 }
 
@@ -217,56 +197,28 @@ sub ffmpeg_begin_file($$$)
     my $filename = shift;
     my $element = shift;
 
-    my ($element_command, $node_command, $command_for_title);
-    if ($element) {
-        if ($element->{'unit_command'}) {
-          $element_command = $element->{'unit_command'};
-        } elsif ($self->can('tree_unit_element_command')) {
-          $element_command = $self->tree_unit_element_command($element);
-        } elsif ($self->can('tree_unit_element_command')) {
-          $element_command = $self->element_command($element);
-        }
-
-       $node_command = $element_command;
-       if ($element_command and $element_command->{'cmdname'}
-           and $element_command->{'cmdname'} ne 'node'
-           and $element_command->{'extra'}
-           and $element_command->{'extra'}->{'associated_node'}) {
-         $node_command = $element_command->{'extra'}->{'associated_node'};
-       }
-
-       $command_for_title = $element_command if ($self->get_conf('SPLIT'));
+    my $command;
+    if ($element and $self->get_conf('SPLIT')) {
+        $command = $self->element_command($element);
     }
 
-    my ($title, $description, $keywords, $encoding, $date, $css_lines, $doctype,
-        $root_html_element_attributes, $body_attributes, $copying_comment,
-        $after_body_open, $extra_head, $program_and_version, $program_homepage,
+    my ($title, $description, $encoding, $date, $css_lines,
+        $doctype, $bodytext, $copying_comment, $after_body_open,
+        $extra_head, $program_and_version, $program_homepage,
         $program, $generator);
-    if ($program_version_num >= 7.001090) {
-        ($title, $description, $keywords, $encoding, $date, $css_lines, $doctype,
-         $root_html_element_attributes, $body_attributes, $copying_comment,
-         $after_body_open, $extra_head, $program_and_version, $program_homepage,
-         $program, $generator) = $self->_file_header_information($command_for_title,
-                                                                 $filename);
-    } elsif ($program_version_num >= 7.000000) {
-        ($title, $description, $encoding, $date, $css_lines, $doctype,
-         $root_html_element_attributes, $copying_comment, $after_body_open,
+    if ($program_version_num >= 7.000000) {
+        ($title, $description, $encoding, $date, $css_lines,
+         $doctype, $bodytext, $copying_comment, $after_body_open,
          $extra_head, $program_and_version, $program_homepage,
-         $program, $generator) = $self->_file_header_information($command_for_title,
-                                                                 $filename);
+         $program, $generator) = $self->_file_header_information($command);
     } else {
         ($title, $description, $encoding, $date, $css_lines,
-         $doctype, $root_html_element_attributes, $copying_comment,
-         $after_body_open, $extra_head, $program_and_version, $program_homepage,
-         $program, $generator) = $self->_file_header_informations($command_for_title);
+         $doctype, $bodytext, $copying_comment, $after_body_open,
+         $extra_head, $program_and_version, $program_homepage,
+         $program, $generator) = $self->_file_header_informations($command);
     }
 
-    my $links;
-    if ($program_version_num >= 7.000000) {
-      $links = $self->_get_links($filename, $element, $node_command);
-    } else {
-      $links = $self->_get_links ($filename, $element);
-    }
+    my $links = $self->_get_links ($filename, $element);
 
     my $head1 = $ENV{"FFMPEG_HEADER1"} || <<EOT;
 <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
@@ -309,25 +261,13 @@ sub ffmpeg_program_string($)
   if (defined($self->get_conf('PROGRAM'))
       and $self->get_conf('PROGRAM') ne ''
       and defined($self->get_conf('PACKAGE_URL'))) {
-    if ($program_version_num >= 7.001090) {
-     return $self->convert_tree(
-      $self->cdt('This document was generated using @uref{{program_homepage}, @emph{{program}}}.',
-         { 'program_homepage' => {'text' => $self->get_conf('PACKAGE_URL')},
-           'program' => {'text' => $self->get_conf('PROGRAM') }}));
-    } else {
-     return $self->convert_tree(
+    return $self->convert_tree(
       $self->gdt('This document was generated using @uref{{program_homepage}, @emph{{program}}}.',
-         { 'program_homepage' => {'text' => $self->get_conf('PACKAGE_URL')},
-           'program' => {'text' => $self->get_conf('PROGRAM') }}));
-    }
+         { 'program_homepage' => $self->get_conf('PACKAGE_URL'),
+           'program' => $self->get_conf('PROGRAM') }));
   } else {
-    if ($program_version_num >= 7.001090) {
-      return $self->convert_tree(
-        $self->cdt('This document was generated automatically.'));
-    } else {
-      return $self->convert_tree(
-        $self->gdt('This document was generated automatically.'));
-    }
+    return $self->convert_tree(
+      $self->gdt('This document was generated automatically.'));
   }
 }
 if ($program_version_6_8) {

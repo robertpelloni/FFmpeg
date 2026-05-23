@@ -128,7 +128,6 @@ static int config_props(AVFilterLink *outlink)
     FilterLink *ol = ff_filter_link(outlink);
     const unsigned total_margin_w = (tile->w - 1) * tile->padding + 2*tile->margin;
     const unsigned total_margin_h = (tile->h - 1) * tile->padding + 2*tile->margin;
-    int ret;
 
     if (inlink->w > (INT_MAX - total_margin_w) / tile->w) {
         av_log(ctx, AV_LOG_ERROR, "Total width %ux%u is too much.\n",
@@ -292,14 +291,14 @@ static const AVFilterPad tile_outputs[] = {
     },
 };
 
-const FFFilter ff_vf_tile = {
-    .p.name        = "tile",
-    .p.description = NULL_IF_CONFIG_SMALL("Tile several successive frames together."),
-    .p.priv_class  = &tile_class,
+const AVFilter ff_vf_tile = {
+    .name          = "tile",
+    .description   = NULL_IF_CONFIG_SMALL("Tile several successive frames together."),
     .init          = init,
     .uninit        = uninit,
     .priv_size     = sizeof(TileContext),
     FILTER_INPUTS(tile_inputs),
     FILTER_OUTPUTS(tile_outputs),
     FILTER_QUERY_FUNC2(query_formats),
+    .priv_class    = &tile_class,
 };

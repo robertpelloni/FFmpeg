@@ -379,7 +379,7 @@ static inline int parse_nal_units(AVCodecParserContext *s,
                 goto fail;
             }
 
-            av_refstruct_replace(&p->ps.pps, p->ps.pps_list[pps_id]);
+            ff_refstruct_replace(&p->ps.pps, p->ps.pps_list[pps_id]);
             p->ps.sps = p->ps.pps->sps;
             sps       = p->ps.sps;
 

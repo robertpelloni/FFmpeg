@@ -58,12 +58,12 @@ RENAME(encode_line)(FFV1Context *f, FFV1SliceContext *sc,
 
     if (ac != AC_GOLOMB_RICE) {
         if (c->bytestream_end - c->bytestream < w * 35) {
-            av_log(logctx, AV_LOG_ERROR, "encoded Range Coder frame too large\n");
+            av_log(logctx, AV_LOG_ERROR, "encoded frame too large\n");
             return AVERROR_INVALIDDATA;
         }
     } else {
         if (put_bytes_left(&sc->pb, 0) < w * 4) {
-            av_log(logctx, AV_LOG_ERROR, "encoded Golomb Rice frame too large\n");
+            av_log(logctx, AV_LOG_ERROR, "encoded frame too large\n");
             return AVERROR_INVALIDDATA;
         }
     }
@@ -173,11 +173,12 @@ static void RENAME(load_rgb_frame)(FFV1Context *f, FFV1SliceContext *sc,
 
 static int RENAME(encode_rgb_frame)(FFV1Context *f, FFV1SliceContext *sc,
                                     const uint8_t *src[4],
-                                    int w, int h, const int stride[4], int ac)
+                                    int w, int h, const int stride[4])
 {
     int x, y, p, i;
     const int ring_size = f->context_model ? 3 : 2;
     TYPE *sample[4][3];
+    const int ac = f->ac;
     const int pass1 = !!(f->avctx->flags & AV_CODEC_FLAG_PASS1);
     int lbd    = f->bits_per_raw_sample <= 8;
     int packed = !src[1];
@@ -225,14 +226,6 @@ static int RENAME(encode_rgb_frame)(FFV1Context *f, FFV1SliceContext *sc,
                 b = *((const uint16_t *)(src[0] + x*2 + stride[0]*y));
                 g = *((const uint16_t *)(src[1] + x*2 + stride[1]*y));
                 r = *((const uint16_t *)(src[2] + x*2 + stride[2]*y));
-            }
-
-            if (sc->remap) {
-                g = sc->fltmap[0][g];
-                b = sc->fltmap[1][b];
-                r = sc->fltmap[2][r];
-                if (transparency)
-                    a = sc->fltmap[3][a];
             }
 
             if (sc->slice_coding_mode != 1) {

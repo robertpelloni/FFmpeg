@@ -68,8 +68,8 @@
 #include "config.h"
 #include "version.h"
 
-EXTERN const FFOutputFormat ff_mxf_d10_muxer;
-EXTERN const FFOutputFormat ff_mxf_opatom_muxer;
+extern const FFOutputFormat ff_mxf_d10_muxer;
+extern const FFOutputFormat ff_mxf_opatom_muxer;
 
 #define IS_D10(s)    ((s)->oformat == &ff_mxf_d10_muxer.p)
 #define IS_OPATOM(s) ((s)->oformat == &ff_mxf_opatom_muxer.p)
@@ -129,7 +129,7 @@ typedef struct MXFContainerEssenceEntry {
     UID container_ul;
     UID element_ul;
     UID codec_ul;
-    int (*write_desc)(AVFormatContext *, AVStream *);
+    void (*write_desc)(AVFormatContext *, AVStream *);
 } MXFContainerEssenceEntry;
 
 typedef struct MXFPackage {
@@ -1541,7 +1541,7 @@ static void mxf_write_avc_subdesc(AVFormatContext *s, AVStream *st)
     mxf_update_klv_size(s->pb, pos);
 }
 
-static int mxf_write_jpeg2000_subdesc(AVFormatContext *s, AVStream *st)
+static void mxf_write_jpeg2000_subdesc(AVFormatContext *s, AVStream *st)
 {
     MXFStreamContext *sc = st->priv_data;
     AVIOContext *pb = s->pb;
@@ -1596,10 +1596,9 @@ static int mxf_write_jpeg2000_subdesc(AVFormatContext *s, AVStream *st)
     avio_write(pb, sc->j2k_info.j2k_comp_desc, 3*pix_desc->nb_components);
 
     mxf_update_klv_size(pb, pos);
-    return 0;
 }
 
-static int mxf_write_cdci_desc(AVFormatContext *s, AVStream *st)
+static void mxf_write_cdci_desc(AVFormatContext *s, AVStream *st)
 {
     MXFStreamContext *sc = st->priv_data;
     int64_t pos = mxf_write_generic_picture_desc(s, st);
@@ -1643,11 +1642,10 @@ static void mxf_write_ffv1_subdesc(AVFormatContext *s, AVStream *st)
     mxf_update_klv_size(s->pb, pos);
 }
 
-static int mxf_write_s436m_anc_desc(AVFormatContext *s, AVStream *st)
+static void mxf_write_s436m_anc_desc(AVFormatContext *s, AVStream *st)
 {
     int64_t pos = mxf_write_generic_desc(s, st, mxf_s436m_anc_descriptor_key);
     mxf_update_klv_size(s->pb, pos);
-    return 0;
 }
 
 static int mxf_write_mpegvideo_local_tags(AVFormatContext *s, AVStream *st)
@@ -1749,25 +1747,22 @@ static int64_t mxf_write_wav_common(AVFormatContext *s, AVStream *st, const UID 
     return pos;
 }
 
-static int mxf_write_wav_desc(AVFormatContext *s, AVStream *st)
+static void mxf_write_wav_desc(AVFormatContext *s, AVStream *st)
 {
     int64_t pos = mxf_write_wav_common(s, st, mxf_wav_descriptor_key);
     mxf_update_klv_size(s->pb, pos);
-    return 0;
 }
 
-static int mxf_write_aes3_desc(AVFormatContext *s, AVStream *st)
+static void mxf_write_aes3_desc(AVFormatContext *s, AVStream *st)
 {
     int64_t pos = mxf_write_wav_common(s, st, mxf_aes3_descriptor_key);
     mxf_update_klv_size(s->pb, pos);
-    return 0;
 }
 
-static int mxf_write_generic_sound_desc(AVFormatContext *s, AVStream *st)
+static void mxf_write_generic_sound_desc(AVFormatContext *s, AVStream *st)
 {
     int64_t pos = mxf_write_generic_sound_common(s, st, mxf_generic_sound_descriptor_key);
     mxf_update_klv_size(s->pb, pos);
-    return 0;
 }
 
 static const uint8_t mxf_indirect_value_utf16le[] = { 0x4c,0x00,0x02,0x10,0x01,0x00,0x00,0x00,0x00,0x06,0x0e,0x2b,0x34,0x01,0x04,0x01,0x01 };
@@ -1819,7 +1814,7 @@ static int mxf_write_user_comments(AVFormatContext *s, const AVDictionary *m)
     return count;
 }
 
-static int mxf_write_package(AVFormatContext *s, MXFPackage *package)
+static void mxf_write_package(AVFormatContext *s, MXFPackage *package)
 {
     MXFContext *mxf = s->priv_data;
     AVIOContext *pb = s->pb;
@@ -1914,13 +1909,9 @@ static int mxf_write_package(AVFormatContext *s, MXFPackage *package)
 
         if (package->type == SourcePackage && package->instance == 1) {
             MXFStreamContext *sc = st->priv_data;
-            int ret = mxf_essence_container_uls[sc->index].write_desc(s, st);
-            if (ret < 0)
-                return ret;
+            mxf_essence_container_uls[sc->index].write_desc(s, st);
         }
     }
-
-    return 0;
 }
 
 static int mxf_write_essence_container_data(AVFormatContext *s)
@@ -1988,11 +1979,8 @@ static int mxf_write_header_metadata_sets(AVFormatContext *s)
     mxf_write_identification(s);
     mxf_write_content_storage(s, packages, package_count);
     mxf->track_instance_count = 0;
-    for (i = 0; i < package_count; i++) {
-        int ret = mxf_write_package(s, &packages[i]);
-        if (ret < 0)
-            return ret;
-    }
+    for (i = 0; i < package_count; i++)
+        mxf_write_package(s, &packages[i]);
     mxf_write_essence_container_data(s);
     return 0;
 }

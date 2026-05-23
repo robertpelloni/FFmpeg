@@ -18,6 +18,8 @@
 
 #include <string.h>
 
+#include "config.h"
+
 #include "libavutil/avassert.h"
 #include "libavutil/buffer.h"
 #include "libavutil/common.h"
@@ -27,7 +29,7 @@
 #include "avcodec.h"
 #include "cbs.h"
 #include "cbs_internal.h"
-#include "libavutil/refstruct.h"
+#include "refstruct.h"
 
 
 static const CodedBitstreamType *const cbs_type_table[] = {
@@ -37,14 +39,14 @@ static const CodedBitstreamType *const cbs_type_table[] = {
 #if CBS_AV1
     &CBS_FUNC(type_av1),
 #endif
-#if CBS_H264
-    &CBS_FUNC(type_h264),
+#if CONFIG_CBS_H264
+    &ff_cbs_type_h264,
 #endif
-#if CBS_H265
-    &CBS_FUNC(type_h265),
+#if CONFIG_CBS_H265
+    &ff_cbs_type_h265,
 #endif
-#if CBS_H266
-    &CBS_FUNC(type_h266),
+#if CONFIG_CBS_H266
+    &ff_cbs_type_h266,
 #endif
 #if CBS_LCEVC
     &CBS_FUNC(type_lcevc),
@@ -52,14 +54,14 @@ static const CodedBitstreamType *const cbs_type_table[] = {
 #if CBS_JPEG
     &CBS_FUNC(type_jpeg),
 #endif
-#if CBS_MPEG2
-    &CBS_FUNC(type_mpeg2),
+#if CONFIG_CBS_MPEG2
+    &ff_cbs_type_mpeg2,
 #endif
-#if CBS_VP8
-    &CBS_FUNC(type_vp8),
+#if CONFIG_CBS_VP8
+    &ff_cbs_type_vp8,
 #endif
-#if CBS_VP9
-    &CBS_FUNC(type_vp9),
+#if CONFIG_CBS_VP9
+    &ff_cbs_type_vp9,
 #endif
 };
 
@@ -109,13 +111,13 @@ av_cold int CBS_FUNC(init)(CodedBitstreamContext **ctx_ptr,
     return 0;
 }
 
-av_cold void CBS_FUNC(flush)(CodedBitstreamContext *ctx)
+av_cold void ff_cbs_flush(CodedBitstreamContext *ctx)
 {
     if (ctx->codec->flush)
         ctx->codec->flush(ctx);
 }
 
-av_cold void CBS_FUNC(close)(CodedBitstreamContext **ctx_ptr)
+av_cold void ff_cbs_close(CodedBitstreamContext **ctx_ptr)
 {
     CodedBitstreamContext *ctx = *ctx_ptr;
 
@@ -136,7 +138,7 @@ av_cold void CBS_FUNC(close)(CodedBitstreamContext **ctx_ptr)
 
 static void cbs_unit_uninit(CodedBitstreamUnit *unit)
 {
-    av_refstruct_unref(&unit->content_ref);
+    ff_refstruct_unref(&unit->content_ref);
     unit->content = NULL;
 
     av_buffer_unref(&unit->data_ref);
@@ -145,7 +147,7 @@ static void cbs_unit_uninit(CodedBitstreamUnit *unit)
     unit->data_bit_padding = 0;
 }
 
-void CBS_FUNC(fragment_reset)(CodedBitstreamFragment *frag)
+void ff_cbs_fragment_reset(CodedBitstreamFragment *frag)
 {
     int i;
 
@@ -159,15 +161,14 @@ void CBS_FUNC(fragment_reset)(CodedBitstreamFragment *frag)
     frag->data_bit_padding = 0;
 }
 
-av_cold void CBS_FUNC(fragment_free)(CodedBitstreamFragment *frag)
+av_cold void ff_cbs_fragment_free(CodedBitstreamFragment *frag)
 {
-    CBS_FUNC(fragment_reset)(frag);
+    ff_cbs_fragment_reset(frag);
 
     av_freep(&frag->units);
     frag->nb_units_allocated = 0;
 }
 
-#if CBS_READ
 static int cbs_read_fragment_content(CodedBitstreamContext *ctx,
                                      CodedBitstreamFragment *frag)
 {
@@ -185,7 +186,7 @@ static int cbs_read_fragment_content(CodedBitstreamContext *ctx,
                 continue;
         }
 
-        av_refstruct_unref(&unit->content_ref);
+        ff_refstruct_unref(&unit->content_ref);
         unit->content = NULL;
 
         av_assert0(unit->data && unit->data_ref);
@@ -199,7 +200,7 @@ static int cbs_read_fragment_content(CodedBitstreamContext *ctx,
             av_log(ctx->log_ctx, AV_LOG_VERBOSE,
                    "Skipping decomposition of unit %d "
                    "(type %"PRIu32").\n", i, unit->type);
-            av_refstruct_unref(&unit->content_ref);
+            ff_refstruct_unref(&unit->content_ref);
             unit->content = NULL;
         } else if (err < 0) {
             av_log(ctx->log_ctx, AV_LOG_ERROR, "Failed to read unit %d "
@@ -261,7 +262,7 @@ static int cbs_read_data(CodedBitstreamContext *ctx,
     return cbs_read_fragment_content(ctx, frag);
 }
 
-int CBS_FUNC(read_extradata)(CodedBitstreamContext *ctx,
+int ff_cbs_read_extradata(CodedBitstreamContext *ctx,
                           CodedBitstreamFragment *frag,
                           const AVCodecParameters *par)
 {
@@ -270,7 +271,7 @@ int CBS_FUNC(read_extradata)(CodedBitstreamContext *ctx,
                          par->extradata_size, 1);
 }
 
-int CBS_FUNC(read_extradata_from_codec)(CodedBitstreamContext *ctx,
+int ff_cbs_read_extradata_from_codec(CodedBitstreamContext *ctx,
                                      CodedBitstreamFragment *frag,
                                      const AVCodecContext *avctx)
 {
@@ -279,7 +280,7 @@ int CBS_FUNC(read_extradata_from_codec)(CodedBitstreamContext *ctx,
                          avctx->extradata_size, 1);
 }
 
-int CBS_FUNC(read_packet)(CodedBitstreamContext *ctx,
+int ff_cbs_read_packet(CodedBitstreamContext *ctx,
                        CodedBitstreamFragment *frag,
                        const AVPacket *pkt)
 {
@@ -287,7 +288,7 @@ int CBS_FUNC(read_packet)(CodedBitstreamContext *ctx,
                          pkt->data, pkt->size, 0);
 }
 
-int CBS_FUNC(read_packet_side_data)(CodedBitstreamContext *ctx,
+int ff_cbs_read_packet_side_data(CodedBitstreamContext *ctx,
                                  CodedBitstreamFragment *frag,
                                  const AVPacket *pkt)
 {
@@ -300,7 +301,7 @@ int CBS_FUNC(read_packet_side_data)(CodedBitstreamContext *ctx,
                          side_data, side_data_size, 1);
 }
 
-int CBS_FUNC(read)(CodedBitstreamContext *ctx,
+int ff_cbs_read(CodedBitstreamContext *ctx,
                 CodedBitstreamFragment *frag,
                 const AVBufferRef *buf,
                 const uint8_t *data, size_t size)
@@ -308,9 +309,7 @@ int CBS_FUNC(read)(CodedBitstreamContext *ctx,
     return cbs_read_data(ctx, frag, buf,
                          data, size, 0);
 }
-#endif
 
-#if CBS_WRITE
 /**
  * Allocate a new internal data buffer of the given size in the unit.
  *
@@ -387,7 +386,7 @@ static int cbs_write_unit_data(CodedBitstreamContext *ctx,
     return 0;
 }
 
-int CBS_FUNC(write_fragment_data)(CodedBitstreamContext *ctx,
+int ff_cbs_write_fragment_data(CodedBitstreamContext *ctx,
                                CodedBitstreamFragment *frag)
 {
     int err, i;
@@ -423,13 +422,13 @@ int CBS_FUNC(write_fragment_data)(CodedBitstreamContext *ctx,
     return 0;
 }
 
-int CBS_FUNC(write_extradata)(CodedBitstreamContext *ctx,
+int ff_cbs_write_extradata(CodedBitstreamContext *ctx,
                            AVCodecParameters *par,
                            CodedBitstreamFragment *frag)
 {
     int err;
 
-    err = CBS_FUNC(write_fragment_data)(ctx, frag);
+    err = ff_cbs_write_fragment_data(ctx, frag);
     if (err < 0)
         return err;
 
@@ -452,14 +451,14 @@ int CBS_FUNC(write_extradata)(CodedBitstreamContext *ctx,
     return 0;
 }
 
-int CBS_FUNC(write_packet)(CodedBitstreamContext *ctx,
+int ff_cbs_write_packet(CodedBitstreamContext *ctx,
                         AVPacket *pkt,
                         CodedBitstreamFragment *frag)
 {
     AVBufferRef *buf;
     int err;
 
-    err = CBS_FUNC(write_fragment_data)(ctx, frag);
+    err = ff_cbs_write_fragment_data(ctx, frag);
     if (err < 0)
         return err;
 
@@ -475,26 +474,22 @@ int CBS_FUNC(write_packet)(CodedBitstreamContext *ctx,
 
     return 0;
 }
-#endif
 
 
-void CBS_FUNC(trace_header)(CodedBitstreamContext *ctx,
+void ff_cbs_trace_header(CodedBitstreamContext *ctx,
                          const char *name)
 {
-#if CBS_TRACE
     if (!ctx->trace_enable)
         return;
 
     av_log(ctx->log_ctx, ctx->trace_level, "%s\n", name);
-#endif
 }
 
-void CBS_FUNC(trace_read_log)(void *trace_context,
+void ff_cbs_trace_read_log(void *trace_context,
                            GetBitContext *gbc, int length,
                            const char *str, const int *subscripts,
                            int64_t value)
 {
-#if CBS_TRACE
     CodedBitstreamContext *ctx = trace_context;
     char name[256];
     char bits[256];
@@ -546,15 +541,13 @@ void CBS_FUNC(trace_read_log)(void *trace_context,
 
     av_log(ctx->log_ctx, ctx->trace_level, "%-10d  %s%*s = %"PRId64"\n",
            position, name, pad, bits, value);
-#endif
 }
 
-void CBS_FUNC(trace_write_log)(void *trace_context,
+void ff_cbs_trace_write_log(void *trace_context,
                             PutBitContext *pbc, int length,
                             const char *str, const int *subscripts,
                             int64_t value)
 {
-#if CBS_TRACE
     CodedBitstreamContext *ctx = trace_context;
 
     // Ensure that the syntax element is written to the output buffer,
@@ -577,11 +570,9 @@ void CBS_FUNC(trace_write_log)(void *trace_context,
 
     skip_bits_long(&gbc, position - length);
 
-    CBS_FUNC(trace_read_log)(ctx, &gbc, length, str, subscripts, value);
-#endif
+    ff_cbs_trace_read_log(ctx, &gbc, length, str, subscripts, value);
 }
 
-#if CBS_READ
 static av_always_inline int cbs_read_unsigned(CodedBitstreamContext *ctx,
                                               GetBitContext *gbc,
                                               int width, const char *name,
@@ -617,7 +608,7 @@ static av_always_inline int cbs_read_unsigned(CodedBitstreamContext *ctx,
     return 0;
 }
 
-int CBS_FUNC(read_unsigned)(CodedBitstreamContext *ctx, GetBitContext *gbc,
+int ff_cbs_read_unsigned(CodedBitstreamContext *ctx, GetBitContext *gbc,
                          int width, const char *name,
                          const int *subscripts, uint32_t *write_to,
                          uint32_t range_min, uint32_t range_max)
@@ -626,16 +617,14 @@ int CBS_FUNC(read_unsigned)(CodedBitstreamContext *ctx, GetBitContext *gbc,
                              write_to, range_min, range_max);
 }
 
-int CBS_FUNC(read_simple_unsigned)(CodedBitstreamContext *ctx, GetBitContext *gbc,
+int ff_cbs_read_simple_unsigned(CodedBitstreamContext *ctx, GetBitContext *gbc,
                                 int width, const char *name, uint32_t *write_to)
 {
     return cbs_read_unsigned(ctx, gbc, width, name, NULL,
                              write_to, 0, UINT32_MAX);
 }
-#endif
 
-#if CBS_WRITE
-int CBS_FUNC(write_unsigned)(CodedBitstreamContext *ctx, PutBitContext *pbc,
+int ff_cbs_write_unsigned(CodedBitstreamContext *ctx, PutBitContext *pbc,
                           int width, const char *name,
                           const int *subscripts, uint32_t value,
                           uint32_t range_min, uint32_t range_max)
@@ -661,16 +650,14 @@ int CBS_FUNC(write_unsigned)(CodedBitstreamContext *ctx, PutBitContext *pbc,
     return 0;
 }
 
-int CBS_FUNC(write_simple_unsigned)(CodedBitstreamContext *ctx, PutBitContext *pbc,
+int ff_cbs_write_simple_unsigned(CodedBitstreamContext *ctx, PutBitContext *pbc,
                                  int width, const char *name, uint32_t value)
 {
-    return CBS_FUNC(write_unsigned)(ctx, pbc, width, name, NULL,
+    return ff_cbs_write_unsigned(ctx, pbc, width, name, NULL,
                                  value, 0, MAX_UINT_BITS(width));
 }
-#endif
 
-#if CBS_READ
-int CBS_FUNC(read_signed)(CodedBitstreamContext *ctx, GetBitContext *gbc,
+int ff_cbs_read_signed(CodedBitstreamContext *ctx, GetBitContext *gbc,
                        int width, const char *name,
                        const int *subscripts, int32_t *write_to,
                        int32_t range_min, int32_t range_max)
@@ -701,10 +688,8 @@ int CBS_FUNC(read_signed)(CodedBitstreamContext *ctx, GetBitContext *gbc,
     *write_to = value;
     return 0;
 }
-#endif
 
-#if CBS_WRITE
-int CBS_FUNC(write_signed)(CodedBitstreamContext *ctx, PutBitContext *pbc,
+int ff_cbs_write_signed(CodedBitstreamContext *ctx, PutBitContext *pbc,
                         int width, const char *name,
                         const int *subscripts, int32_t value,
                         int32_t range_min, int32_t range_max)
@@ -729,7 +714,6 @@ int CBS_FUNC(write_signed)(CodedBitstreamContext *ctx, PutBitContext *pbc,
 
     return 0;
 }
-#endif
 
 
 static int cbs_insert_unit(CodedBitstreamFragment *frag,
@@ -768,7 +752,7 @@ static int cbs_insert_unit(CodedBitstreamFragment *frag,
     return 0;
 }
 
-int CBS_FUNC(insert_unit_content)(CodedBitstreamFragment *frag,
+int ff_cbs_insert_unit_content(CodedBitstreamFragment *frag,
                                int position,
                                CodedBitstreamUnitType type,
                                void *content,
@@ -787,7 +771,7 @@ int CBS_FUNC(insert_unit_content)(CodedBitstreamFragment *frag,
 
     if (content_ref) {
         // Create our own reference out of the user-supplied one.
-        content_ref = av_refstruct_ref(content_ref);
+        content_ref = ff_refstruct_ref(content_ref);
     }
 
     unit = &frag->units[position];
@@ -835,7 +819,7 @@ static int cbs_insert_unit_data(CodedBitstreamFragment *frag,
     return 0;
 }
 
-int CBS_FUNC(append_unit_data)(CodedBitstreamFragment *frag,
+int ff_cbs_append_unit_data(CodedBitstreamFragment *frag,
                             CodedBitstreamUnitType type,
                             uint8_t *data, size_t data_size,
                             AVBufferRef *data_buf)
@@ -845,7 +829,7 @@ int CBS_FUNC(append_unit_data)(CodedBitstreamFragment *frag,
                                 frag->nb_units);
 }
 
-void CBS_FUNC(delete_unit)(CodedBitstreamFragment *frag,
+void ff_cbs_delete_unit(CodedBitstreamFragment *frag,
                         int position)
 {
     av_assert0(0 <= position && position < frag->nb_units
@@ -861,7 +845,7 @@ void CBS_FUNC(delete_unit)(CodedBitstreamFragment *frag,
                 (frag->nb_units - position) * sizeof(*frag->units));
 }
 
-static void cbs_default_free_unit_content(AVRefStructOpaque opaque, void *content)
+static void cbs_default_free_unit_content(FFRefStructOpaque opaque, void *content)
 {
     CodedBitstreamUnitTypeDescriptor *desc = opaque.c;
 
@@ -901,14 +885,14 @@ static CodedBitstreamUnitTypeDescriptor
 
 static void *cbs_alloc_content(CodedBitstreamUnitTypeDescriptor *desc)
 {
-    return av_refstruct_alloc_ext_c(desc->content_size, 0,
-                                    (AVRefStructOpaque){ .c = desc },
+    return ff_refstruct_alloc_ext_c(desc->content_size, 0,
+                                    (FFRefStructOpaque){ .c = desc },
                                     desc->content_type == CBS_CONTENT_TYPE_COMPLEX
                                             ? desc->type.complex.content_free
                                             : cbs_default_free_unit_content);
 }
 
-int CBS_FUNC(alloc_unit_content)(CodedBitstreamContext *ctx,
+int ff_cbs_alloc_unit_content(CodedBitstreamContext *ctx,
                               CodedBitstreamUnit *unit)
 {
     CodedBitstreamUnitTypeDescriptor *desc;
@@ -977,7 +961,7 @@ static int cbs_clone_noncomplex_unit_content(void **clonep,
     return 0;
 
 fail:
-    av_refstruct_unref(&copy);
+    ff_refstruct_unref(&copy);
     return err;
 }
 
@@ -1020,7 +1004,7 @@ static int cbs_clone_unit_content(CodedBitstreamContext *ctx,
     return 0;
 }
 
-int CBS_FUNC(make_unit_refcounted)(CodedBitstreamContext *ctx,
+int ff_cbs_make_unit_refcounted(CodedBitstreamContext *ctx,
                                 CodedBitstreamUnit *unit)
 {
     av_assert0(unit->content);
@@ -1029,24 +1013,24 @@ int CBS_FUNC(make_unit_refcounted)(CodedBitstreamContext *ctx,
     return cbs_clone_unit_content(ctx, unit);
 }
 
-int CBS_FUNC(make_unit_writable)(CodedBitstreamContext *ctx,
+int ff_cbs_make_unit_writable(CodedBitstreamContext *ctx,
                               CodedBitstreamUnit *unit)
 {
     void *ref = unit->content_ref;
     int err;
 
     av_assert0(unit->content);
-    if (ref && av_refstruct_exclusive(ref))
+    if (ref && ff_refstruct_exclusive(ref))
         return 0;
 
     err = cbs_clone_unit_content(ctx, unit);
     if (err < 0)
         return err;
-    av_refstruct_unref(&ref);
+    ff_refstruct_unref(&ref);
     return 0;
 }
 
-void CBS_FUNC(discard_units)(CodedBitstreamContext *ctx,
+void ff_cbs_discard_units(CodedBitstreamContext *ctx,
                           CodedBitstreamFragment *frag,
                           enum AVDiscard skip,
                           int flags)
@@ -1058,11 +1042,11 @@ void CBS_FUNC(discard_units)(CodedBitstreamContext *ctx,
         if (ctx->codec->discarded_unit(ctx, &frag->units[i], skip)) {
             // discard all units
             if (!(flags & DISCARD_FLAG_KEEP_NON_VCL)) {
-                CBS_FUNC(fragment_free)(frag);
+                ff_cbs_fragment_free(frag);
                 return;
             }
 
-            CBS_FUNC(delete_unit)(frag, i);
+            ff_cbs_delete_unit(frag, i);
         }
     }
 }

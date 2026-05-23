@@ -26,13 +26,13 @@
 #include "libavutil/cpu.h"
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/me_cmp.h"
-#include "libavcodec/mpegvideoenc.h"
+#include "libavcodec/mpegvideo.h"
 
 int ff_sum_abs_dctelem_sse2(const int16_t *block);
 int ff_sum_abs_dctelem_ssse3(const int16_t *block);
 int ff_sse8_sse2(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2,
                  ptrdiff_t stride, int h);
-int ff_sse16_sse2(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2,
+int ff_sse16_sse2(MpegEncContext *v, const uint8_t *pix1, const uint8_t *pix2,
                   ptrdiff_t stride, int h);
 int ff_hf_noise8_ssse3(const uint8_t *pix1, ptrdiff_t stride, int h);
 int ff_hf_noise16_ssse3(const uint8_t *pix1, ptrdiff_t stride, int h);
@@ -46,11 +46,11 @@ int ff_sad8_x2_mmxext(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2
                       ptrdiff_t stride, int h);
 int ff_sad16_x2_sse2(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2,
                      ptrdiff_t stride, int h);
-int ff_sad8_y2_mmxext(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2,
+int ff_sad8_y2_mmxext(MpegEncContext *v, const uint8_t *pix1, const uint8_t *pix2,
                       ptrdiff_t stride, int h);
 int ff_sad16_y2_sse2(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2,
                      ptrdiff_t stride, int h);
-int ff_sad8_approx_xy2_mmxext(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2,
+int ff_sad8_approx_xy2_mmxext(MpegEncContext *v, const uint8_t *pix1, const uint8_t *pix2,
                               ptrdiff_t stride, int h);
 int ff_sad8_xy2_sse2(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2,
                      ptrdiff_t stride, int h);
@@ -71,10 +71,10 @@ int ff_vsad16_approx_sse2(MPVEncContext *v, const uint8_t *pix1, const uint8_t *
 int ff_vsad16u_approx_sse2(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2,
                            ptrdiff_t stride, int h);
 
-#define hadamard_func(cpu)                                                       \
-    int ff_hadamard8_diff_ ## cpu(MPVEncContext *s, const uint8_t *src1,         \
+#define hadamard_func(cpu)                                                    \
+    int ff_hadamard8_diff_ ## cpu(MpegEncContext *s, const uint8_t *src1,     \
                                   const uint8_t *src2, ptrdiff_t stride, int h); \
-    int ff_hadamard8_diff16_ ## cpu(MPVEncContext *s, const uint8_t *src1,       \
+    int ff_hadamard8_diff16_ ## cpu(MpegEncContext *s, const uint8_t *src1,   \
                                     const uint8_t *src2, ptrdiff_t stride, int h);
 
 hadamard_func(sse2)
@@ -88,7 +88,7 @@ static int nsse16_ssse3(MPVEncContext *c, const uint8_t *pix1, const uint8_t *pi
                  ff_hf_noise16_ssse3(pix2, stride, h);
 
     if (c)
-        return score1 + FFABS(score2) * c->c.avctx->nsse_weight;
+        return score1 + FFABS(score2) * c->avctx->nsse_weight;
     else
         return score1 + FFABS(score2) * 8;
 }
@@ -101,7 +101,7 @@ static int nsse8_ssse3(MPVEncContext *c, const uint8_t *pix1, const uint8_t *pix
                  ff_hf_noise8_ssse3(pix2, stride, h);
 
     if (c)
-        return score1 + FFABS(score2) * c->c.avctx->nsse_weight;
+        return score1 + FFABS(score2) * c->avctx->nsse_weight;
     else
         return score1 + FFABS(score2) * 8;
 }

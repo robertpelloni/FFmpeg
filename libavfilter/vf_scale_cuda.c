@@ -108,7 +108,6 @@ typedef struct CUDAScaleContext {
 
     int force_original_aspect_ratio;
     int force_divisible_by;
-    int reset_sar;
 
     CUcontext   cu_ctx;
     CUmodule    cu_module;
@@ -376,7 +375,6 @@ static av_cold int cudascale_config_props(AVFilterLink *outlink)
     AVHWFramesContext     *frames_ctx;
     AVCUDADeviceContext *device_hwctx;
     int w, h;
-    double w_adj = 1.0;
     int ret;
 
     if ((ret = ff_scale_eval_dimensions(s,
@@ -412,9 +410,7 @@ static av_cold int cudascale_config_props(AVFilterLink *outlink)
     s->hwctx = device_hwctx;
     s->cu_stream = s->hwctx->stream;
 
-    if (s->reset_sar)
-        outlink->sample_aspect_ratio = (AVRational){1, 1};
-    else if (inlink->sample_aspect_ratio.num) {
+    if (inlink->sample_aspect_ratio.num) {
         outlink->sample_aspect_ratio = av_mul_q((AVRational){outlink->h*inlink->w,
                                                              outlink->w*inlink->h},
                                                 inlink->sample_aspect_ratio);
@@ -577,11 +573,6 @@ static int cudascale_scale(AVFilterContext *ctx, AVFrame *out, AVFrame *in)
     if (ret < 0)
         return ret;
 
-    if (out->width != in->width || out->height != in->height) {
-        av_frame_side_data_remove_by_props(&out->side_data, &out->nb_side_data,
-                                           AV_SIDE_DATA_PROP_SIZE_DEPENDENT);
-    }
-
     return 0;
 }
 
@@ -615,14 +606,10 @@ static int cudascale_filter_frame(AVFilterLink *link, AVFrame *in)
     if (ret < 0)
         goto fail;
 
-    if (s->reset_sar) {
-        out->sample_aspect_ratio = (AVRational){1, 1};
-    } else {
-        av_reduce(&out->sample_aspect_ratio.num, &out->sample_aspect_ratio.den,
-                  (int64_t)in->sample_aspect_ratio.num * outlink->h * link->w,
-                  (int64_t)in->sample_aspect_ratio.den * outlink->w * link->h,
-                  INT_MAX);
-    }
+    av_reduce(&out->sample_aspect_ratio.num, &out->sample_aspect_ratio.den,
+              (int64_t)in->sample_aspect_ratio.num * outlink->h * link->w,
+              (int64_t)in->sample_aspect_ratio.den * outlink->w * link->h,
+              INT_MAX);
 
     av_frame_free(&in);
     return ff_filter_frame(outlink, out);
@@ -659,7 +646,6 @@ static const AVOption options[] = {
         { "decrease", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = SCALE_FORCE_OAR_DECREASE }, 0, 0, FLAGS, .unit = "force_oar" },
         { "increase", NULL, 0, AV_OPT_TYPE_CONST, {.i64 = SCALE_FORCE_OAR_INCREASE }, 0, 0, FLAGS, .unit = "force_oar" },
     { "force_divisible_by", "enforce that the output resolution is divisible by a defined integer when force_original_aspect_ratio is used", OFFSET(force_divisible_by), AV_OPT_TYPE_INT, { .i64 = 1 }, 1, 256, FLAGS },
-    { "reset_sar", "reset SAR to 1 and scale to square pixels if scaling proportionally", OFFSET(reset_sar), AV_OPT_TYPE_BOOL, { .i64 = 0}, 0, 1, FLAGS },
     { NULL },
 };
 
@@ -687,16 +673,15 @@ static const AVFilterPad cudascale_outputs[] = {
     },
 };
 
-const FFFilter ff_vf_scale_cuda = {
-    .p.name        = "scale_cuda",
-    .p.description = NULL_IF_CONFIG_SMALL("GPU accelerated video resizer"),
-
-    .p.priv_class  = &cudascale_class,
+const AVFilter ff_vf_scale_cuda = {
+    .name      = "scale_cuda",
+    .description = NULL_IF_CONFIG_SMALL("GPU accelerated video resizer"),
 
     .init          = cudascale_init,
     .uninit        = cudascale_uninit,
 
     .priv_size = sizeof(CUDAScaleContext),
+    .priv_class = &cudascale_class,
 
     FILTER_INPUTS(cudascale_inputs),
     FILTER_OUTPUTS(cudascale_outputs),

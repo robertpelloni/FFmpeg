@@ -381,7 +381,7 @@ HF_NOISE 8
 HF_NOISE 16
 
 ;---------------------------------------------------------------------------------------
-;int ff_sad_<opt>(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2, ptrdiff_t stride, int h);
+;int ff_sad_<opt>(MpegEncContext *v, const uint8_t *pix1, const uint8_t *pix2, ptrdiff_t stride, int h);
 ;---------------------------------------------------------------------------------------
 ;%1 = 8/16, %2 = a/u (whether pix1 is aligned or not)
 %macro SAD 1-2
@@ -438,7 +438,7 @@ SAD 16
 SAD 16, u
 
 ;------------------------------------------------------------------------------------------
-;int ff_sad_x2_<opt>(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2, ptrdiff_t stride, int h);
+;int ff_sad_x2_<opt>(MpegEncContext *v, const uint8_t *pix1, const uint8_t *pix2, ptrdiff_t stride, int h);
 ;------------------------------------------------------------------------------------------
 ;%1 = 8/16
 %macro SAD_X2 1
@@ -494,7 +494,7 @@ INIT_XMM sse2
 SAD_X2 16
 
 ;------------------------------------------------------------------------------------------
-;int ff_sad_y2_<opt>(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2, ptrdiff_t stride, int h);
+;int ff_sad_y2_<opt>(MpegEncContext *v, const uint8_t *pix1, const uint8_t *pix2, ptrdiff_t stride, int h);
 ;------------------------------------------------------------------------------------------
 ;%1 = 8/16
 %macro SAD_Y2 1
@@ -636,7 +636,7 @@ SAD_XY2  8, h, h
 SAD_XY2 16, a, u
 
 ;-------------------------------------------------------------------------------------------
-;int ff_sad_approx_xy2_<opt>(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2, ptrdiff_t stride, int h);
+;int ff_sad_approx_xy2_<opt>(MpegEncContext *v, const uint8_t *pix1, const uint8_t *pix2, ptrdiff_t stride, int h);
 ;-------------------------------------------------------------------------------------------
 ;%1 = 8/16
 %macro SAD_APPROX_XY2 1
@@ -706,7 +706,7 @@ INIT_XMM sse2
 SAD_APPROX_XY2 16
 
 ;--------------------------------------------------------------------
-;int ff_vsad_intra(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2,
+;int ff_vsad_intra(MpegEncContext *v, const uint8_t *pix1, const uint8_t *pix2,
 ;                  ptrdiff_t line_size, int h);
 ;--------------------------------------------------------------------
 ; %1 = 8/16, %2 = a/u (whether pix1 is aligned or not)
@@ -747,7 +747,7 @@ VSAD_INTRA 16, a
 VSAD_INTRA 16, u
 
 ;---------------------------------------------------------------------
-;int ff_vsad_approx(MPVEncContext *v, const uint8_t *pix1, const uint8_t *pix2,
+;int ff_vsad_approx(MpegEncContext *v, const uint8_t *pix1, const uint8_t *pix2,
 ;                   ptrdiff_t line_size, int h);
 ;---------------------------------------------------------------------
 ; %1 = 8/16, %2 = a/u (whether pix1 is aligned or not)

@@ -92,10 +92,6 @@ void ff_hevc_idct_4x4_dc_10_neon(int16_t *coeffs);
 void ff_hevc_idct_8x8_dc_10_neon(int16_t *coeffs);
 void ff_hevc_idct_16x16_dc_10_neon(int16_t *coeffs);
 void ff_hevc_idct_32x32_dc_10_neon(int16_t *coeffs);
-void ff_hevc_idct_4x4_dc_12_neon(int16_t *coeffs);
-void ff_hevc_idct_8x8_dc_12_neon(int16_t *coeffs);
-void ff_hevc_idct_16x16_dc_12_neon(int16_t *coeffs);
-void ff_hevc_idct_32x32_dc_12_neon(int16_t *coeffs);
 void ff_hevc_transform_luma_4x4_neon_8(int16_t *coeffs);
 
 void ff_hevc_dequant_4x4_8_neon(int16_t *coeffs);

@@ -40,12 +40,6 @@ void ff_h264_h_loop_filter_luma_8_rvv(uint8_t *pix, ptrdiff_t stride,
                                       int alpha, int beta, int8_t *tc0);
 void ff_h264_h_loop_filter_luma_mbaff_8_rvv(uint8_t *pix, ptrdiff_t stride,
                                             int alpha, int beta, int8_t *tc0);
-void ff_h264_v_loop_filter_luma_intra_8_rvv(uint8_t *pix, ptrdiff_t stride,
-                                            int alpha, int beta);
-void ff_h264_h_loop_filter_luma_intra_8_rvv(uint8_t *pix, ptrdiff_t stride,
-                                            int alpha, int beta);
-void ff_h264_h_loop_filter_luma_mbaff_intra_8_rvv(uint8_t *pix, ptrdiff_t s,
-                                                  int a, int b);
 void ff_h264_v_loop_filter_chroma_8_rvv(uint8_t *pix, ptrdiff_t stride,
                                         int alpha, int beta, int8_t *tc0);
 void ff_h264_h_loop_filter_chroma_8_rvv(uint8_t *pix, ptrdiff_t stride,
@@ -53,13 +47,6 @@ void ff_h264_h_loop_filter_chroma_8_rvv(uint8_t *pix, ptrdiff_t stride,
 void ff_h264_h_loop_filter_chroma_mbaff_8_rvv(uint8_t *pix, ptrdiff_t stride,
                                               int alpha, int beta,
                                               int8_t *tc0);
-void ff_h264_v_loop_filter_chroma_intra_8_rvv(uint8_t *pix, ptrdiff_t stride,
-                                              int alpha, int beta);
-void ff_h264_h_loop_filter_chroma_intra_8_rvv(uint8_t *pix, ptrdiff_t stride,
-                                              int alpha, int beta);
-void ff_h264_h_loop_filter_chroma_mbaff_intra_8_rvv(uint8_t *pix,
-                                                    ptrdiff_t stride,
-                                                    int alpha, int beta);
 
 #define IDCT_DEPTH(depth) \
 void ff_h264_idct_add_##depth##_rvv(uint8_t *d, int16_t *s, int stride); \

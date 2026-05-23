@@ -32,14 +32,13 @@
 
 #include "avcodec.h"
 #include "decode.h"
-#include "h263.h"
 #include "h264chroma.h"
 #include "internal.h"
 #include "mpegutils.h"
 #include "mpegvideo.h"
 #include "mpegvideodec.h"
 #include "mpeg4videodec.h"
-#include "libavutil/refstruct.h"
+#include "refstruct.h"
 #include "thread.h"
 #include "threadprogress.h"
 #include "wmv2dec.h"
@@ -160,25 +159,42 @@ int ff_mpeg_update_thread_context(AVCodecContext *dst,
            (char *) &s1->last_time_base);
 
     // B-frame info
+    s->max_b_frames = s1->max_b_frames;
     s->low_delay    = s1->low_delay;
+
+    // DivX handling (doesn't work)
+    s->divx_packed  = s1->divx_packed;
+
+    if (s1->bitstream_buffer) {
+        av_fast_padded_malloc(&s->bitstream_buffer,
+                              &s->allocated_bitstream_buffer_size,
+                              s1->bitstream_buffer_size);
+        if (!s->bitstream_buffer) {
+            s->bitstream_buffer_size = 0;
+            return AVERROR(ENOMEM);
+        }
+        s->bitstream_buffer_size = s1->bitstream_buffer_size;
+        memcpy(s->bitstream_buffer, s1->bitstream_buffer,
+               s1->bitstream_buffer_size);
+    }
 
     // MPEG-2/interlacing info
     memcpy(&s->progressive_sequence, &s1->progressive_sequence,
-           (char *) &s1->first_field + sizeof(s1->first_field) - (char *) &s1->progressive_sequence);
+           (char *) &s1->rtp_mode - (char *) &s1->progressive_sequence);
 
     return ret;
 }
 
-av_cold int ff_mpv_decode_close(AVCodecContext *avctx)
+int ff_mpv_decode_close(AVCodecContext *avctx)
 {
     MpegEncContext *s = avctx->priv_data;
 
-    av_refstruct_pool_uninit(&s->picture_pool);
+    ff_refstruct_pool_uninit(&s->picture_pool);
     ff_mpv_common_end(s);
     return 0;
 }
 
-av_cold int ff_mpv_common_frame_size_change(MpegEncContext *s)
+int ff_mpv_common_frame_size_change(MpegEncContext *s)
 {
     int err = 0;
 
@@ -225,7 +241,7 @@ av_cold int ff_mpv_common_frame_size_change(MpegEncContext *s)
 static int alloc_picture(MpegEncContext *s, MPVWorkPicture *dst, int reference)
 {
     AVCodecContext *avctx = s->avctx;
-    MPVPicture *pic = av_refstruct_pool_get(s->picture_pool);
+    MPVPicture *pic = ff_refstruct_pool_get(s->picture_pool);
     int ret;
 
     if (!pic)
@@ -413,7 +429,7 @@ void ff_print_debug_info(const MpegEncContext *s, const MPVPicture *p, AVFrame *
 {
     ff_print_debug_info2(s->avctx, pict, p->mb_type,
                          p->qscale_table, p->motion_val,
-                         p->mb_width, p->mb_height, p->mb_stride, s->quarter_sample);
+                         s->mb_width, s->mb_height, s->mb_stride, s->quarter_sample);
 }
 
 int ff_mpv_export_qp_table(const MpegEncContext *s, AVFrame *f,
@@ -455,7 +471,7 @@ void ff_mpeg_draw_horiz_band(MpegEncContext *s, int y, int h)
                        s->first_field, s->low_delay);
 }
 
-av_cold void ff_mpeg_flush(AVCodecContext *avctx)
+void ff_mpeg_flush(AVCodecContext *avctx)
 {
     MpegEncContext *const s = avctx->priv_data;
 
@@ -465,6 +481,7 @@ av_cold void ff_mpeg_flush(AVCodecContext *avctx)
 
     s->mb_x = s->mb_y = 0;
 
+    s->bitstream_buffer_size = 0;
     s->pp_time = 0;
 }
 

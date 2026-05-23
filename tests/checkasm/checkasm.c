@@ -58,7 +58,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include "checkasm.h"
-#include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "libavutil/cpu.h"
 #include "libavutil/intfloat.h"
@@ -711,32 +710,34 @@ static inline double avg_cycles_per_call(const CheckasmPerf *const p)
 static void print_benchs(CheckasmFunc *f)
 {
     if (f) {
-        CheckasmFuncVersion *v = &f->versions;
-        const CheckasmPerf *p = &v->perf;
-        const double baseline = avg_cycles_per_call(p);
-        double decicycles;
-
         print_benchs(f->child[0]);
 
-        do {
-            if (p->iterations) {
-                p = &v->perf;
-                decicycles = avg_cycles_per_call(p);
-                if (state.csv || state.tsv) {
-                    const char sep = state.csv ? ',' : '\t';
-                    printf("%s%c%s%c%.1f\n", f->name, sep,
-                           cpu_suffix(v->cpu), sep,
-                           decicycles / 10.0);
-                } else {
-                    const int pad_length = 10 + 50 -
-                        printf("%s_%s:", f->name, cpu_suffix(v->cpu));
-                    const double ratio = decicycles ?
-                        baseline / decicycles : 0.0;
-                    printf("%*.1f (%5.2fx)\n", FFMAX(pad_length, 0),
-                        decicycles / 10.0, ratio);
+        /* Only print functions with at least one assembly version */
+        if (f->versions.cpu || f->versions.next) {
+            CheckasmFuncVersion *v = &f->versions;
+            const CheckasmPerf *p = &v->perf;
+            const double baseline = avg_cycles_per_call(p);
+            double decicycles;
+            do {
+                if (p->iterations) {
+                    p = &v->perf;
+                    decicycles = avg_cycles_per_call(p);
+                    if (state.csv || state.tsv) {
+                        const char sep = state.csv ? ',' : '\t';
+                        printf("%s%c%s%c%.1f\n", f->name, sep,
+                               cpu_suffix(v->cpu), sep,
+                               decicycles / 10.0);
+                    } else {
+                        const int pad_length = 10 + 50 -
+                            printf("%s_%s:", f->name, cpu_suffix(v->cpu));
+                        const double ratio = decicycles ?
+                            baseline / decicycles : 0.0;
+                        printf("%*.1f (%5.2fx)\n", FFMAX(pad_length, 0),
+                            decicycles / 10.0, ratio);
+                    }
                 }
-            }
-        } while ((v = v->next));
+            } while ((v = v->next));
+        }
 
         print_benchs(f->child[1]);
     }
@@ -1167,9 +1168,8 @@ int checkasm_bench_func(void)
            !wildstrcmp(state.current_func->name, state.bench_pattern);
 }
 
-/* Indicate that the current test has failed, return whether verbose printing
- * is requested. */
-int checkasm_fail_func(const char *msg, ...)
+/* Indicate that the current test has failed */
+void checkasm_fail_func(const char *msg, ...)
 {
     if (state.current_func_ver && state.current_func_ver->cpu &&
         state.current_func_ver->ok)
@@ -1186,7 +1186,6 @@ int checkasm_fail_func(const char *msg, ...)
         state.current_func_ver->ok = 0;
         state.num_failed++;
     }
-    return state.verbose;
 }
 
 void checkasm_set_signal_handler_state(int enabled) {
@@ -1273,31 +1272,29 @@ do { \
     int64_t aligned_h = (h - 1LL + align_h) & ~(align_h - 1); \
     int err = 0; \
     int y = 0; \
-    av_assert0(aligned_w == (int32_t)aligned_w);\
-    av_assert0(aligned_h == (int32_t)aligned_h);\
     stride1 /= sizeof(*buf1); \
     stride2 /= sizeof(*buf2); \
     for (y = 0; y < h; y++) \
         if (!compare(&buf1[y*stride1], &buf2[y*stride2], w)) \
             break; \
-    if (y != h) { \
-        if (check_err(file, line, name, w, h, &err)) \
-            return 1; \
-        for (y = 0; y < h; y++) { \
-            for (int x = 0; x < w; x++) \
-                fprintf(stderr, " " fmt, buf1[x]); \
-            fprintf(stderr, "    "); \
-            for (int x = 0; x < w; x++) \
-                fprintf(stderr, " " fmt, buf2[x]); \
-            fprintf(stderr, "    "); \
-            for (int x = 0; x < w; x++) \
-                fprintf(stderr, "%c", buf1[x] != buf2[x] ? 'x' : '.'); \
-            buf1 += stride1; \
-            buf2 += stride2; \
-            fprintf(stderr, "\n"); \
-        } \
-        buf1 -= h*stride1; \
-        buf2 -= h*stride2; \
+    if (y == h) \
+        return 0; \
+    checkasm_fail_func("%s:%d", file, line); \
+    if (!state.verbose) \
+        return 1; \
+    fprintf(stderr, "%s:\n", name); \
+    while (h--) { \
+        for (int x = 0; x < w; x++) \
+            fprintf(stderr, " " fmt, buf1[x]); \
+        fprintf(stderr, "    "); \
+        for (int x = 0; x < w; x++) \
+            fprintf(stderr, " " fmt, buf2[x]); \
+        fprintf(stderr, "    "); \
+        for (int x = 0; x < w; x++) \
+            fprintf(stderr, "%c", buf1[x] != buf2[x] ? 'x' : '.'); \
+        buf1 += stride1; \
+        buf2 += stride2; \
+        fprintf(stderr, "\n"); \
     } \
     for (y = -padding; y < 0; y++) \
         if (!compare(&buf1[y*stride1 - padding], &buf2[y*stride2 - padding], \

@@ -52,15 +52,14 @@ static int vqf_probe(const AVProbeData *probe_packet)
     return AVPROBE_SCORE_EXTENSION;
 }
 
-static int add_metadata(AVFormatContext *s, uint32_t tag,
+static void add_metadata(AVFormatContext *s, uint32_t tag,
                          unsigned int tag_len, unsigned int remaining)
 {
     int len = FFMIN(tag_len, remaining);
     char *buf, key[5] = {0};
-    int ret;
 
     if (len == UINT_MAX)
-        return AVERROR_INVALIDDATA;
+        return;
 
     buf = av_malloc(len+1);
     if (!buf)
@@ -73,7 +72,7 @@ static int add_metadata(AVFormatContext *s, uint32_t tag,
     }
     buf[len] = 0;
     AV_WL32(key, tag);
-    return av_dict_set(&s->metadata, key, buf, AV_DICT_DONT_STRDUP_VAL);
+    av_dict_set(&s->metadata, key, buf, AV_DICT_DONT_STRDUP_VAL);
 }
 
 static const AVMetadataConv vqf_metadata_conv[] = {
@@ -173,9 +172,7 @@ static int vqf_read_header(AVFormatContext *s)
             avio_skip(s->pb, FFMIN(len, header_size));
             break;
         default:
-            ret = add_metadata(s, chunk_tag, len, header_size);
-            if (ret < 0)
-                return ret;
+            add_metadata(s, chunk_tag, len, header_size);
             break;
         }
 

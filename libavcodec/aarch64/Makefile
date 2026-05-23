@@ -42,7 +42,6 @@ ARMV8-OBJS-$(CONFIG_VIDEODSP)           += aarch64/videodsp.o
 
 # subsystems
 NEON-OBJS-$(CONFIG_AAC_DECODER)         += aarch64/sbrdsp_neon.o
-NEON-OBJS-$(CONFIG_AAC_ENCODER)         += aarch64/aacencdsp_neon.o
 NEON-OBJS-$(CONFIG_AC3DSP)              += aarch64/ac3dsp_neon.o
 NEON-OBJS-$(CONFIG_FDCTDSP)             += aarch64/fdctdsp_neon.o
 NEON-OBJS-$(CONFIG_FMTCONVERT)          += aarch64/fmtconvert_neon.o

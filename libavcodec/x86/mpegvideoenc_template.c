@@ -27,25 +27,52 @@
 #include "libavutil/x86/asm.h"
 #include "libavcodec/mathops.h"
 #include "libavcodec/mpegutils.h"
-#include "libavcodec/mpegvideoenc.h"
+#include "libavcodec/mpegvideo.h"
 #include "fdct.h"
 #include "mpegvideoencdsp.h"
 
+#undef MMREG_WIDTH
+#undef MM
+#undef MOVQ
 #undef SPREADW
 #undef PMAX
 #undef SAVE_SIGN
 #undef RESTORE_SIGN
 
+#if COMPILE_TEMPLATE_SSE2
+#define MMREG_WIDTH "16"
+#define MM "%%xmm"
+#define MOVQ "movdqa"
 #define SPREADW(a) \
             "pshuflw $0, "a", "a"       \n\t"\
             "punpcklwd "a", "a"         \n\t"
+#define PMAXW(a,b) "pmaxsw "a", "b"     \n\t"
 #define PMAX(a,b) \
             "movhlps "a", "b"           \n\t"\
-            "pmaxsw "b", "a"            \n\t"\
+            PMAXW(b, a)\
             "pshuflw $0x0E, "a", "b"    \n\t"\
-            "pmaxsw "b", "a"            \n\t"\
+            PMAXW(b, a)\
             "pshuflw $0x01, "a", "b"    \n\t"\
-            "pmaxsw "b", "a"            \n\t"
+            PMAXW(b, a)
+#else
+#define MMREG_WIDTH "8"
+#define MM "%%mm"
+#define MOVQ "movq"
+#define SPREADW(a) \
+            "punpcklwd "a", "a"         \n\t"\
+            "punpcklwd "a", "a"         \n\t"
+#define PMAXW(a,b) \
+            "psubusw "a", "b"           \n\t"\
+            "paddw "a", "b"             \n\t"
+#define PMAX(a,b)  \
+            "movq "a", "b"              \n\t"\
+            "psrlq $32, "a"             \n\t"\
+            PMAXW(b, a)\
+            "movq "a", "b"              \n\t"\
+            "psrlq $16, "a"             \n\t"\
+            PMAXW(b, a)
+
+#endif
 
 #if COMPILE_TEMPLATE_SSSE3
 #define SAVE_SIGN(a,b) \
@@ -64,7 +91,7 @@
             "psubw "a", "b"             \n\t" // out=((ABS(block[i])*qmat[0] - bias[0]*qmat[0])>>16)*sign(block[i])
 #endif
 
-static int RENAME(dct_quantize)(MPVEncContext *const s,
+static int RENAME(dct_quantize)(MpegEncContext *s,
                             int16_t *block, int n,
                             int qscale, int *overflow)
 {
@@ -74,7 +101,7 @@ static int RENAME(dct_quantize)(MPVEncContext *const s,
     LOCAL_ALIGNED_16(int16_t, temp_block, [64]);
 
     //s->fdct (block);
-    ff_fdct_sse2(block); // cannot be anything else ...
+    RENAME_FDCT(ff_fdct)(block); // cannot be anything else ...
 
     if (s->dct_error_sum) {
         const int intra = s->c.mb_intra;
@@ -86,7 +113,7 @@ static int RENAME(dct_quantize)(MPVEncContext *const s,
 #endif
     }
 
-    if (s->c.mb_intra) {
+    if (s->mb_intra) {
         int dummy;
         if (n < 4){
             q = s->c.y_dc_scale;
@@ -96,7 +123,7 @@ static int RENAME(dct_quantize)(MPVEncContext *const s,
             qmat = s->q_chroma_intra_matrix16[qscale][0];
         }
         /* note: block[0] is assumed to be positive */
-        if (!s->c.h263_aic) {
+        if (!s->h263_aic) {
         __asm__ volatile (
                 "mul %%ecx                \n\t"
                 : "=d" (level), "=a"(dummy)
@@ -140,8 +167,8 @@ static int RENAME(dct_quantize)(MPVEncContext *const s,
             "pmaxsw  %%xmm0, %%xmm3             \n\t"
             "add        $16, %%"FF_REG_a"       \n\t"
             " js 1b                             \n\t"
-            PMAX("%%xmm3", "%%xmm0")
-            "movd %%xmm3, %%"FF_REG_a"          \n\t"
+            PMAX(MM"3", MM"0")
+            "movd "MM"3, %%"FF_REG_a"           \n\t"
             "movzbl %%al, %%eax                 \n\t" // last_non_zero_p1
             : "+a" (last_non_zero_p1)
             : "r" (block+64), "r" (qmat),
@@ -174,8 +201,8 @@ static int RENAME(dct_quantize)(MPVEncContext *const s,
             "pmaxsw  %%xmm0, %%xmm3             \n\t"
             "add        $16, %%"FF_REG_a"       \n\t"
             " js 1b                             \n\t"
-            PMAX("%%xmm3", "%%xmm0")
-            "movd %%xmm3, %%"FF_REG_a"          \n\t"
+            PMAX(MM"3", MM"0")
+            "movd "MM"3, %%"FF_REG_a"           \n\t"
             "movzbl %%al, %%eax                 \n\t" // last_non_zero_p1
             : "+a" (last_non_zero_p1)
             : "r" (block+64), "r" (qmat+64),
@@ -185,20 +212,23 @@ static int RENAME(dct_quantize)(MPVEncContext *const s,
         );
     }
     __asm__ volatile(
-        "movd         %1, %%xmm1             \n\t" // max_qcoeff
-        SPREADW("%%xmm1")
-        "psubusw  %%xmm1, %%xmm4             \n\t"
-        "packuswb %%xmm4, %%xmm4             \n\t"
-        "packsswb %%xmm4, %%xmm4             \n\t"
-        "movd     %%xmm4, %0                 \n\t" // *overflow
+        "movd %1, "MM"1                     \n\t" // max_qcoeff
+        SPREADW(MM"1")
+        "psubusw "MM"1, "MM"4               \n\t"
+        "packuswb "MM"4, "MM"4              \n\t"
+#if COMPILE_TEMPLATE_SSE2
+        "packsswb "MM"4, "MM"4              \n\t"
+#endif
+        "movd "MM"4, %0                     \n\t" // *overflow
         : "=g" (*overflow)
         : "g" (s->max_qcoeff)
     );
 
-    block[0] = s->c.mb_intra ? level : temp_block[0];
+    if(s->mb_intra) block[0]= level;
+    else            block[0]= temp_block[0];
 
-    av_assert2(ARCH_X86_32 || s->c.idsp.perm_type != FF_IDCT_PERM_SIMPLE);
-    if (ARCH_X86_32 && s->c.idsp.perm_type == FF_IDCT_PERM_SIMPLE) {
+    av_assert2(ARCH_X86_32 || s->idsp.perm_type != FF_IDCT_PERM_SIMPLE);
+    if (ARCH_X86_32 && s->idsp.perm_type == FF_IDCT_PERM_SIMPLE) {
         if(last_non_zero_p1 <= 1) goto end;
         block[0x08] = temp_block[0x01]; block[0x10] = temp_block[0x08];
         block[0x20] = temp_block[0x10];
@@ -242,7 +272,7 @@ static int RENAME(dct_quantize)(MPVEncContext *const s,
         block[0x3E] = temp_block[0x3D]; block[0x27] = temp_block[0x36];
         block[0x3D] = temp_block[0x2F]; block[0x2F] = temp_block[0x37];
         block[0x37] = temp_block[0x3E]; block[0x3F] = temp_block[0x3F];
-    } else if (s->c.idsp.perm_type == FF_IDCT_PERM_LIBMPEG2) {
+    }else if(s->idsp.perm_type == FF_IDCT_PERM_LIBMPEG2){
         if(last_non_zero_p1 <= 1) goto end;
         block[0x04] = temp_block[0x01];
         block[0x08] = temp_block[0x08]; block[0x10] = temp_block[0x10];
@@ -286,7 +316,7 @@ static int RENAME(dct_quantize)(MPVEncContext *const s,
         block[0x3E] = temp_block[0x3D]; block[0x33] = temp_block[0x36];
         block[0x2F] = temp_block[0x2F]; block[0x37] = temp_block[0x37];
         block[0x3B] = temp_block[0x3E]; block[0x3F] = temp_block[0x3F];
-    } else if (s->c.idsp.perm_type == FF_IDCT_PERM_NONE) {
+    } else if (s->idsp.perm_type == FF_IDCT_PERM_NONE) {
         if(last_non_zero_p1 <= 1) goto end;
         block[0x01] = temp_block[0x01];
         block[0x08] = temp_block[0x08]; block[0x10] = temp_block[0x10];
@@ -330,7 +360,7 @@ static int RENAME(dct_quantize)(MPVEncContext *const s,
         block[0x3D] = temp_block[0x3D]; block[0x36] = temp_block[0x36];
         block[0x2F] = temp_block[0x2F]; block[0x37] = temp_block[0x37];
         block[0x3E] = temp_block[0x3E]; block[0x3F] = temp_block[0x3F];
-    } else if (s->c.idsp.perm_type == FF_IDCT_PERM_TRANSPOSE) {
+    } else if (s->idsp.perm_type == FF_IDCT_PERM_TRANSPOSE) {
         if(last_non_zero_p1 <= 1) goto end;
         block[0x08] = temp_block[0x01];
         block[0x01] = temp_block[0x08]; block[0x02] = temp_block[0x10];
@@ -375,12 +405,12 @@ static int RENAME(dct_quantize)(MPVEncContext *const s,
         block[0x3D] = temp_block[0x2F]; block[0x3E] = temp_block[0x37];
         block[0x37] = temp_block[0x3E]; block[0x3F] = temp_block[0x3F];
     } else {
-        av_log(s->c.avctx, AV_LOG_DEBUG, "s->c.idsp.perm_type: %d\n",
-                (int)s->c.idsp.perm_type);
-        av_assert0(s->c.idsp.perm_type == FF_IDCT_PERM_NONE ||
-                s->c.idsp.perm_type == FF_IDCT_PERM_LIBMPEG2 ||
-                s->c.idsp.perm_type == FF_IDCT_PERM_SIMPLE ||
-                s->c.idsp.perm_type == FF_IDCT_PERM_TRANSPOSE);
+        av_log(s, AV_LOG_DEBUG, "s->idsp.perm_type: %d\n",
+                (int)s->idsp.perm_type);
+        av_assert0(s->idsp.perm_type == FF_IDCT_PERM_NONE ||
+                s->idsp.perm_type == FF_IDCT_PERM_LIBMPEG2 ||
+                s->idsp.perm_type == FF_IDCT_PERM_SIMPLE ||
+                s->idsp.perm_type == FF_IDCT_PERM_TRANSPOSE);
     }
     end:
     return last_non_zero_p1 - 1;

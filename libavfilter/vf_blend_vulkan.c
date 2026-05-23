@@ -46,8 +46,9 @@ typedef struct BlendVulkanContext {
 
     int initialized;
     FFVkExecPool e;
-    AVVulkanDeviceQueueFamily *qf;
+    FFVkQueueFamilyCtx qf;
     FFVulkanShader shd;
+    VkSampler sampler;
 
     FilterParamsVulkan params;
     float all_opacity;
@@ -200,9 +201,14 @@ static av_cold void uninit(AVFilterContext *avctx)
 {
     BlendVulkanContext *s = avctx->priv;
     FFVulkanContext *vkctx = &s->vkctx;
+    FFVulkanFunctions *vk = &vkctx->vkfn;
 
     ff_vk_exec_pool_free(vkctx, &s->e);
     ff_vk_shader_free(vkctx, &s->shd);
+
+    if (s->sampler)
+        vk->DestroySampler(vkctx->hwctx->act_dev, s->sampler,
+                           vkctx->hwctx->alloc);
 
     ff_vk_uninit(&s->vkctx);
     ff_framesync_uninit(&s->fs);
@@ -336,11 +342,9 @@ static const AVFilterPad blend_vulkan_outputs[] = {
     }
 };
 
-const FFFilter ff_vf_blend_vulkan = {
-    .p.name          = "blend_vulkan",
-    .p.description   = NULL_IF_CONFIG_SMALL("Blend two video frames in Vulkan"),
-    .p.priv_class    = &blend_vulkan_class,
-    .p.flags         = AVFILTER_FLAG_HWDEVICE,
+const AVFilter ff_vf_blend_vulkan = {
+    .name            = "blend_vulkan",
+    .description     = NULL_IF_CONFIG_SMALL("Blend two video frames in Vulkan"),
     .priv_size       = sizeof(BlendVulkanContext),
     .init            = &init,
     .uninit          = &uninit,
@@ -348,6 +352,8 @@ const FFFilter ff_vf_blend_vulkan = {
     FILTER_INPUTS(blend_vulkan_inputs),
     FILTER_OUTPUTS(blend_vulkan_outputs),
     FILTER_SINGLE_PIXFMT(AV_PIX_FMT_VULKAN),
+    .priv_class      = &blend_vulkan_class,
     .flags_internal  = FF_FILTER_FLAG_HWFRAME_AWARE,
+    .flags          = AVFILTER_FLAG_HWDEVICE,
     .process_command = &process_command,
 };

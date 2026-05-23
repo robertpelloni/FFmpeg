@@ -404,12 +404,9 @@ static const AVFilterPad thumbnail_outputs[] = {
     },
 };
 
-const FFFilter ff_vf_thumbnail = {
-    .p.name        = "thumbnail",
-    .p.description = NULL_IF_CONFIG_SMALL("Select the most representative frame in a given sequence of consecutive frames."),
-    .p.priv_class  = &thumbnail_class,
-    .p.flags       = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC |
-                     AVFILTER_FLAG_SLICE_THREADS,
+const AVFilter ff_vf_thumbnail = {
+    .name          = "thumbnail",
+    .description   = NULL_IF_CONFIG_SMALL("Select the most representative frame in a given sequence of consecutive frames."),
     .priv_size     = sizeof(ThumbContext),
     .init          = init,
     .uninit        = uninit,

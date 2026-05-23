@@ -189,9 +189,9 @@ const FFCodec ff_libcodec2_encoder = {
     .p.id                   = AV_CODEC_ID_CODEC2,
     .p.capabilities         = AV_CODEC_CAP_DR1 |
                               AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE,
-    CODEC_SAMPLERATES(8000),
-    CODEC_SAMPLEFMTS(AV_SAMPLE_FMT_S16),
-    CODEC_CH_LAYOUTS(AV_CHANNEL_LAYOUT_MONO),
+    .p.supported_samplerates = (const int[]){ 8000, 0 },
+    .p.sample_fmts          = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_NONE },
+    .p.ch_layouts           = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_MONO, { 0 } },
     .p.priv_class           = &libcodec2_enc_class,
     .caps_internal          = FF_CODEC_CAP_NOT_INIT_THREADSAFE,
     .priv_data_size         = sizeof(LibCodec2Context),

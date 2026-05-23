@@ -155,6 +155,8 @@ const FFFilter ff_vf_blackframe = {
     .p.priv_class  = &blackframe_class,
     .p.flags       = AVFILTER_FLAG_METADATA_ONLY | AVFILTER_FLAG_SLICE_THREADS,
     .priv_size     = sizeof(BlackFrameContext),
+    .priv_class    = &blackframe_class,
+    .flags         = AVFILTER_FLAG_METADATA_ONLY,
     FILTER_INPUTS(avfilter_vf_blackframe_inputs),
     FILTER_OUTPUTS(ff_video_default_filterpad),
     FILTER_PIXFMTS_ARRAY(pix_fmts),

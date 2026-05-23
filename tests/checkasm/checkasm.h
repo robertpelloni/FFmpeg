@@ -183,7 +183,7 @@ struct CheckasmPerf;
 
 void *checkasm_check_func(void *func, const char *name, ...) av_printf_format(2, 3);
 int checkasm_bench_func(void);
-int checkasm_fail_func(const char *msg, ...) av_printf_format(1, 2);
+void checkasm_fail_func(const char *msg, ...) av_printf_format(1, 2);
 struct CheckasmPerf *checkasm_get_perf_context(void);
 void checkasm_report(const char *name, ...) av_printf_format(1, 2);
 void checkasm_set_signal_handler_state(int enabled);
@@ -416,8 +416,8 @@ typedef struct CheckasmPerf {
                 }\
             }\
             emms_c();\
-            perf->cycles += tsum;\
-            perf->iterations += tcount;\
+            perf->cycles += t;\
+            perf->iterations++;\
             checkasm_set_signal_handler_state(0);\
         }\
     } while (0)
@@ -450,9 +450,7 @@ typedef struct CheckasmPerf {
 int checkasm_check_##type(const char *file, int line, \
                           const type *buf1, ptrdiff_t stride1, \
                           const type *buf2, ptrdiff_t stride2, \
-                          int w, int h, const char *name, \
-                          int align_w, int align_h, \
-                          int padding)
+                          int w, int h, const char *name)
 
 DECL_CHECKASM_CHECK_FUNC(uint8_t);
 DECL_CHECKASM_CHECK_FUNC(uint16_t);

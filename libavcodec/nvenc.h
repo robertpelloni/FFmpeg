@@ -61,7 +61,6 @@ typedef void ID3D11Device;
 #define NVENC_HAVE_MULTIPLE_REF_FRAMES
 #define NVENC_HAVE_CUSTREAM_PTR
 #define NVENC_HAVE_GETLASTERRORSTRING
-#define NVENC_HAVE_FILLER_DATA
 #endif
 
 // SDK 10.0 compile time feature checks
@@ -77,11 +76,6 @@ typedef void ID3D11Device;
 #if NVENCAPI_CHECK_VERSION(11, 1)
 #define NVENC_HAVE_QP_CHROMA_OFFSETS
 #define NVENC_HAVE_SINGLE_SLICE_INTRA_REFRESH
-#endif
-
-// SDK 12.0 compile time feature checks
-#if NVENCAPI_CHECK_VERSION(12, 0)
-#define NVENC_HAVE_HEVC_OUTPUT_RECOVERY_POINT_SEI
 #endif
 
 // SDK 12.1 compile time feature checks
@@ -169,12 +163,6 @@ enum {
     NV_ENC_H264_PROFILE_BASELINE,
     NV_ENC_H264_PROFILE_MAIN,
     NV_ENC_H264_PROFILE_HIGH,
-#ifdef NVENC_HAVE_H264_10BIT_SUPPORT
-    NV_ENC_H264_PROFILE_HIGH_10,
-#endif
-#ifdef NVENC_HAVE_422_SUPPORT
-    NV_ENC_H264_PROFILE_HIGH_422,
-#endif
     NV_ENC_H264_PROFILE_HIGH_444P,
 };
 
@@ -287,8 +275,6 @@ typedef struct NvencContext
     float quality;
     int aud;
     int bluray_compat;
-    int qmin;
-    int qmax;
     int init_qp_p;
     int init_qp_b;
     int init_qp_i;

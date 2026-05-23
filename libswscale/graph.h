@@ -27,7 +27,7 @@
 #include "libavutil/buffer.h"
 
 #include "swscale.h"
-#include "format.h"
+#include "utils.h"
 
 static av_always_inline av_const int ff_fmt_vshift(enum AVPixelFormat fmt, int plane)
 {
@@ -169,8 +169,8 @@ int ff_sws_graph_init(SwsGraph *graph, SwsContext *ctx, const SwsFormat *dst,
 /**
  * Allocate and initialize the filter graph. Returns 0 or a negative error.
  */
-int ff_sws_graph_create(SwsContext *ctx, const SwsFormat *dst, const SwsFormat *src,
-                        int field, SwsGraph **out_graph);
+int sws_graph_create(SwsContext *ctx, const SwsFormat *dst, const SwsFormat *src,
+                     int field, SwsGraph **out_graph);
 
 
 /**
@@ -204,10 +204,12 @@ void ff_sws_graph_rollback(SwsGraph *graph, int since_idx);
 /**
  * Uninitialize any state associate with this filter graph and free it.
  */
-void ff_sws_graph_free(SwsGraph **graph);
+void sws_graph_free(SwsGraph **graph);
 
 /**
- * Update dynamic per-frame HDR metadata without requiring a full reinit.
+ * Wrapper around sws_graph_create that does nothing if the format is
+ * unchanged. Must be called after changing any of the fields in `ctx`, or else
+ * they will have no effect.
  */
 void ff_sws_graph_update_metadata(SwsGraph *graph, const SwsColor *color);
 

@@ -354,7 +354,7 @@ dialogue_anchored_loudness=0/1
 album_anchored_loudness=0/1
 [/PIECE]
 [PIECE]
-sound_system=5.1(side)
+sound_system=5.1
 integrated_loudness=0/256
 digital_peak=0/256
 true_peak=0/1

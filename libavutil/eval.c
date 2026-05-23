@@ -833,6 +833,8 @@ double av_expr_eval(AVExpr *e, const double *const_values, void *opaque)
         .prng_state   = r->prng_state,
     };
 
+    p.const_values = const_values;
+    p.opaque     = opaque;
     return eval_expr(&p, e);
 }
 

@@ -165,7 +165,6 @@ typedef struct OptionsContext {
     int loop;
     int rate_emu;
     float readrate;
-    float readrate_catchup;
     double readrate_initial_burst;
     int accurate_seek;
     int thread_queue_size;
@@ -236,7 +235,6 @@ typedef struct OptionsContext {
     SpecifierOptList filter_scripts;
 #endif
     SpecifierOptList reinit_filters;
-    SpecifierOptList drop_changed;
     SpecifierOptList fix_sub_duration;
     SpecifierOptList fix_sub_duration_heartbeat;
     SpecifierOptList canvas_sizes;
@@ -269,7 +267,6 @@ enum IFilterFlags {
     IFILTER_FLAG_REINIT         = (1 << 1),
     IFILTER_FLAG_CFR            = (1 << 2),
     IFILTER_FLAG_CROP           = (1 << 3),
-    IFILTER_FLAG_DROPCHANGED    = (1 << 4),
 };
 
 typedef struct InputFilterOptions {
@@ -327,7 +324,7 @@ typedef struct OutputFilterOptions {
     AVDictionary       *sws_opts;
     AVDictionary       *swr_opts;
 
-    int64_t             nb_threads;
+    const char         *nb_threads;
 
     // A combination of OFilterFlags.
     unsigned            flags;

@@ -110,6 +110,10 @@ typedef struct FFFormatContext {
      */
     AVPacket *pkt;
 
+#if FF_API_AVSTREAM_SIDE_DATA
+    int inject_global_side_data;
+#endif
+
     int avoid_negative_ts_use_pts;
 
     /**
@@ -287,6 +291,13 @@ typedef struct FFStream {
     int64_t last_dts_for_order_check;
     uint8_t dts_ordered;
     uint8_t dts_misordered;
+
+#if FF_API_AVSTREAM_SIDE_DATA
+    /**
+     * Internal data to inject global side data
+     */
+    int inject_global_side_data;
+#endif
 
     /**
      * display aspect ratio (0 if unknown)

@@ -18,7 +18,6 @@
 
 #include "libavutil/avassert.h"
 #include "libavutil/common.h"
-#include "libavutil/error.h"
 #include "libavutil/internal.h"
 #include "libavutil/log.h"
 #include "libavutil/mem.h"
@@ -191,12 +190,12 @@ static void hw_base_encode_add_next_prev(FFHWBaseEncodeContext *ctx,
         return;
     }
 
-    if (ctx->nb_next_prev < ctx->ref_l0) {
+    if (ctx->nb_next_prev < MAX_PICTURE_REFERENCES) {
         ctx->next_prev[ctx->nb_next_prev++] = pic;
         ++pic->ref_count[0];
     } else {
         --ctx->next_prev[0]->ref_count[0];
-        for (i = 0; i < ctx->ref_l0 - 1; i++)
+        for (i = 0; i < MAX_PICTURE_REFERENCES - 1; i++)
             ctx->next_prev[i] = ctx->next_prev[i + 1];
         ctx->next_prev[i] = pic;
         ++pic->ref_count[0];
@@ -604,7 +603,7 @@ start:
                     av_fifo_can_read(ctx->encode_fifo);
                 err = ctx->op->issue(avctx, pic);
                 if (err < 0) {
-                    av_log(avctx, AV_LOG_ERROR, "Encode failed: %s.\n", av_err2str(err));
+                    av_log(avctx, AV_LOG_ERROR, "Encode failed: %d.\n", err);
                     return err;
                 }
                 pic->encode_issued = 1;
@@ -631,7 +630,7 @@ start:
 
         err = ctx->op->issue(avctx, pic);
         if (err < 0) {
-            av_log(avctx, AV_LOG_ERROR, "Encode failed: %s.\n", av_err2str(err));
+            av_log(avctx, AV_LOG_ERROR, "Encode failed: %d.\n", err);
             return err;
         }
 

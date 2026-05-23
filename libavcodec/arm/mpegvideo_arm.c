@@ -24,7 +24,6 @@
 #include "libavutil/arm/cpu.h"
 #include "libavcodec/avcodec.h"
 #include "libavcodec/mpegvideo.h"
-#include "libavcodec/mpegvideo_unquantize.h"
 #include "mpegvideo_arm.h"
 #include "asm-offsets.h"
 
@@ -48,12 +47,12 @@ void ff_dct_unquantize_h263_inter_neon(const MPVContext *s, int16_t *block,
 void ff_dct_unquantize_h263_intra_neon(const MPVContext *s, int16_t *block,
                                        int n, int qscale);
 
-av_cold void ff_mpv_unquantize_init_arm(MPVUnquantDSPContext *s, int bitexact)
+av_cold void ff_mpv_common_init_arm(MpegEncContext *s)
 {
     int cpu_flags = av_get_cpu_flags();
 
     if (have_armv5te(cpu_flags))
-        ff_mpv_unquantize_init_armv5te(s);
+        ff_mpv_common_init_armv5te(s);
 
     if (have_neon(cpu_flags)) {
         s->dct_unquantize_h263_intra = ff_dct_unquantize_h263_intra_neon;

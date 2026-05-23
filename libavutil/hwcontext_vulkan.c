@@ -133,8 +133,8 @@ typedef struct VulkanDevicePriv {
     void *libvulkan;
 
     FFVulkanContext    vkctx;
-    AVVulkanDeviceQueueFamily *compute_qf;
-    AVVulkanDeviceQueueFamily *transfer_qf;
+    FFVkQueueFamilyCtx compute_qf;
+    FFVkQueueFamilyCtx transfer_qf;
 
     /* Properties */
     VkPhysicalDeviceProperties2 props;
@@ -142,16 +142,13 @@ typedef struct VulkanDevicePriv {
     VkPhysicalDeviceExternalMemoryHostPropertiesEXT hprops;
     VkPhysicalDeviceDriverProperties dprops;
 
-    /* Opaque FD external semaphore properties */
-    VkExternalSemaphoreProperties ext_sem_props_opaque;
-
     /* Enabled features */
     VulkanDeviceFeatures feats;
 
     /* Queues */
     pthread_mutex_t **qf_mutex;
     uint32_t nb_tot_qfs;
-    uint32_t img_qfs[64];
+    uint32_t img_qfs[5];
     uint32_t nb_img_qfs;
 
     /* Debug callback */
@@ -316,8 +313,6 @@ static void device_features_copy_needed(VulkanDeviceFeatures *dst, VulkanDeviceF
     COPY_VAL(device.features.shaderInt64);
     COPY_VAL(device.features.shaderInt16);
     COPY_VAL(device.features.shaderFloat64);
-    COPY_VAL(device.features.shaderStorageImageReadWithoutFormat);
-    COPY_VAL(device.features.shaderStorageImageWriteWithoutFormat);
 
     COPY_VAL(vulkan_1_1.samplerYcbcrConversion);
     COPY_VAL(vulkan_1_1.storagePushConstant16);
@@ -371,9 +366,6 @@ static void device_features_copy_needed(VulkanDeviceFeatures *dst, VulkanDeviceF
 #endif
 
     COPY_VAL(video_maintenance_1.videoMaintenance1);
-#ifdef VK_KHR_video_maintenance2
-    COPY_VAL(video_maintenance_2.videoMaintenance2);
-#endif
 
 #ifdef VK_KHR_video_decode_vp9
     COPY_VAL(vp9_decode.videoDecodeVP9);
@@ -428,7 +420,6 @@ static const struct FFVkFormatEntry {
     { VK_FORMAT_R16_UNORM,  AV_PIX_FMT_GRAY12,  VK_IMAGE_ASPECT_COLOR_BIT, 1, 1, 1, { VK_FORMAT_R16_UNORM  } },
     { VK_FORMAT_R16_UNORM,  AV_PIX_FMT_GRAY14,  VK_IMAGE_ASPECT_COLOR_BIT, 1, 1, 1, { VK_FORMAT_R16_UNORM  } },
     { VK_FORMAT_R16_UNORM,  AV_PIX_FMT_GRAY16,  VK_IMAGE_ASPECT_COLOR_BIT, 1, 1, 1, { VK_FORMAT_R16_UNORM  } },
-    { VK_FORMAT_R32_UINT,   AV_PIX_FMT_GRAY32,  VK_IMAGE_ASPECT_COLOR_BIT, 1, 1, 1, { VK_FORMAT_R32_UINT   } },
     { VK_FORMAT_R32_SFLOAT, AV_PIX_FMT_GRAYF32, VK_IMAGE_ASPECT_COLOR_BIT, 1, 1, 1, { VK_FORMAT_R32_SFLOAT } },
 
     /* RGB formats */
@@ -642,19 +633,11 @@ static int vkfmt_from_pixfmt2(AVHWDeviceContext *dev_ctx, enum AVPixelFormat p,
     return AVERROR(EINVAL);
 }
 
-#if CONFIG_VULKAN_STATIC
-VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance,
-                                                               const char *pName);
-#endif
-
 static int load_libvulkan(AVHWDeviceContext *ctx)
 {
     VulkanDevicePriv *p = ctx->hwctx;
     AVVulkanDeviceContext *hwctx = &p->p;
 
-#if CONFIG_VULKAN_STATIC
-    hwctx->get_proc_addr = vkGetInstanceProcAddr;
-#else
     static const char *lib_names[] = {
 #if defined(_WIN32)
         "vulkan-1.dll",
@@ -680,7 +663,6 @@ static int load_libvulkan(AVHWDeviceContext *ctx)
     }
 
     hwctx->get_proc_addr = (PFN_vkGetInstanceProcAddr)dlsym(p->libvulkan, "vkGetInstanceProcAddr");
-#endif /* CONFIG_VULKAN_STATIC */
 
     return 0;
 }
@@ -1607,7 +1589,7 @@ static int setup_queue_families(AVHWDeviceContext *ctx, VkDeviceCreateInfo *cd)
         };
         qf[i] = (VkQueueFamilyProperties2) {
             .sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2,
-            .pNext = p->vkctx.extensions & FF_VK_EXT_VIDEO_QUEUE ? &qf_vid[i] : NULL,
+            .pNext = &qf_vid[i],
         };
     }
 
@@ -1946,7 +1928,6 @@ static int vulkan_device_init(AVHWDeviceContext *ctx)
     FFVulkanFunctions *vk = &p->vkctx.vkfn;
     VkQueueFamilyProperties2 *qf;
     VkQueueFamilyVideoPropertiesKHR *qf_vid;
-    VkPhysicalDeviceExternalSemaphoreInfo ext_sem_props_info;
     int graph_index, comp_index, tx_index, enc_index, dec_index;
 
     /* Set device extension flags */
@@ -1992,24 +1973,6 @@ static int vulkan_device_init(AVHWDeviceContext *ctx)
         return AVERROR_EXTERNAL;
     }
 
-    ext_sem_props_info = (VkPhysicalDeviceExternalSemaphoreInfo) {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_SEMAPHORE_INFO,
-    };
-
-    /* Opaque FD semaphore properties */
-    ext_sem_props_info.handleType =
-#ifdef _WIN32
-        IsWindows8OrGreater()
-            ? VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT
-            : VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT;
-#else
-        VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
-#endif
-    p->ext_sem_props_opaque.sType = VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES;
-    vk->GetPhysicalDeviceExternalSemaphoreProperties(hwctx->phys_dev,
-                                                     &ext_sem_props_info,
-                                                     &p->ext_sem_props_opaque);
-
     qf = av_malloc_array(qf_num, sizeof(VkQueueFamilyProperties2));
     if (!qf)
         return AVERROR(ENOMEM);
@@ -2026,7 +1989,7 @@ static int vulkan_device_init(AVHWDeviceContext *ctx)
         };
         qf[i] = (VkQueueFamilyProperties2) {
             .sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2,
-            .pNext = p->vkctx.extensions & FF_VK_EXT_VIDEO_QUEUE ? &qf_vid[i] : NULL,
+            .pNext = &qf_vid[i],
         };
     }
 
@@ -2171,8 +2134,8 @@ FF_ENABLE_DEPRECATION_WARNINGS
     p->vkctx.hwctx = hwctx;
 
     ff_vk_load_props(&p->vkctx);
-    p->compute_qf = ff_vk_qf_find(&p->vkctx, VK_QUEUE_COMPUTE_BIT, 0);
-    p->transfer_qf = ff_vk_qf_find(&p->vkctx, VK_QUEUE_TRANSFER_BIT, 0);
+    ff_vk_qf_init(&p->vkctx, &p->compute_qf, VK_QUEUE_COMPUTE_BIT);
+    ff_vk_qf_init(&p->vkctx, &p->transfer_qf, VK_QUEUE_TRANSFER_BIT);
 
     /* Re-query device capabilities, in case the device was created externally */
     vk->GetPhysicalDeviceMemoryProperties(hwctx->phys_dev, &p->mprops);
@@ -2758,19 +2721,8 @@ static int create_frame(AVHWFramesContext *hwfc, AVVkFrame **frame,
     VulkanDevicePriv *p = ctx->hwctx;
     AVVulkanDeviceContext *hwctx = &p->p;
     FFVulkanFunctions *vk = &p->vkctx.vkfn;
-    AVVkFrame *f;
 
-    VkSemaphoreTypeCreateInfo sem_type_info = {
-        .sType         = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
-        .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
-        .initialValue  = 0,
-    };
-    VkSemaphoreCreateInfo sem_spawn = {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-        .pNext = &sem_type_info,
-    };
-
-    VkExportSemaphoreCreateInfo ext_sem_info_opaque = {
+    VkExportSemaphoreCreateInfo ext_sem_info = {
         .sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO,
 #ifdef _WIN32
         .handleTypes = IsWindows8OrGreater()
@@ -2781,13 +2733,23 @@ static int create_frame(AVHWFramesContext *hwfc, AVVkFrame **frame,
 #endif
     };
 
-    /* Check if exporting is supported before chaining any structs */
-    if (p->ext_sem_props_opaque.externalSemaphoreFeatures & VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT) {
-        if (p->vkctx.extensions & (FF_VK_EXT_EXTERNAL_WIN32_SEM | FF_VK_EXT_EXTERNAL_FD_SEM))
-            ff_vk_link_struct(&sem_type_info, &ext_sem_info_opaque);
-    }
+    VkSemaphoreTypeCreateInfo sem_type_info = {
+        .sType         = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+#ifdef _WIN32
+        .pNext         = p->vkctx.extensions & FF_VK_EXT_EXTERNAL_WIN32_SEM ? &ext_sem_info : NULL,
+#else
+        .pNext         = p->vkctx.extensions & FF_VK_EXT_EXTERNAL_FD_SEM ? &ext_sem_info : NULL,
+#endif
+        .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+        .initialValue  = 0,
+    };
 
-    f = av_vk_frame_alloc();
+    VkSemaphoreCreateInfo sem_spawn = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = &sem_type_info,
+    };
+
+    AVVkFrame *f = av_vk_frame_alloc();
     if (!f) {
         av_log(ctx, AV_LOG_ERROR, "Unable to allocate memory for AVVkFrame!\n");
         return AVERROR(ENOMEM);
@@ -3173,18 +3135,18 @@ static int vulkan_frames_init(AVHWFramesContext *hwfc)
     if (!hwctx->unlock_frame)
         hwctx->unlock_frame = unlock_frame;
 
-    err = ff_vk_exec_pool_init(&p->vkctx, p->compute_qf, &fp->compute_exec,
-                               p->compute_qf->num, 0, 0, 0, NULL);
+    err = ff_vk_exec_pool_init(&p->vkctx, &p->compute_qf, &fp->compute_exec,
+                               p->compute_qf.nb_queues, 0, 0, 0, NULL);
     if (err)
         return err;
 
-    err = ff_vk_exec_pool_init(&p->vkctx, p->transfer_qf, &fp->upload_exec,
-                               p->transfer_qf->num*2, 0, 0, 0, NULL);
+    err = ff_vk_exec_pool_init(&p->vkctx, &p->transfer_qf, &fp->upload_exec,
+                               p->transfer_qf.nb_queues*2, 0, 0, 0, NULL);
     if (err)
         return err;
 
-    err = ff_vk_exec_pool_init(&p->vkctx, p->transfer_qf, &fp->download_exec,
-                               p->transfer_qf->num, 0, 0, 0, NULL);
+    err = ff_vk_exec_pool_init(&p->vkctx, &p->transfer_qf, &fp->download_exec,
+                               p->transfer_qf.nb_queues, 0, 0, 0, NULL);
     if (err)
         return err;
 
@@ -3813,130 +3775,6 @@ fail:
 #endif
 
 #if CONFIG_CUDA
-static int export_mem_to_cuda(AVHWDeviceContext *ctx,
-                              AVHWDeviceContext *cuda_cu, CudaFunctions *cu,
-                              AVVkFrameInternal *dst_int, int idx,
-                              VkDeviceMemory mem, size_t size)
-{
-    VkResult ret;
-    VulkanDevicePriv *p = ctx->hwctx;
-    AVVulkanDeviceContext *hwctx = &p->p;
-    FFVulkanFunctions *vk = &p->vkctx.vkfn;
-
-#ifdef _WIN32
-    CUDA_EXTERNAL_MEMORY_HANDLE_DESC ext_desc = {
-        .type = IsWindows8OrGreater()
-                ? CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32
-                : CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT,
-            .size = size,
-    };
-    VkMemoryGetWin32HandleInfoKHR export_info = {
-        .sType      = VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR,
-        .memory     = mem,
-        .handleType = IsWindows8OrGreater()
-            ? VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT
-            : VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT,
-    };
-
-    ret = vk->GetMemoryWin32HandleKHR(hwctx->act_dev, &export_info,
-                                      &ext_desc.handle.win32.handle);
-    if (ret != VK_SUCCESS) {
-        av_log(ctx, AV_LOG_ERROR, "Unable to export the image as a Win32 Handle: %s!\n",
-               ff_vk_ret2str(ret));
-        return AVERROR_EXTERNAL;
-    }
-    dst_int->ext_mem_handle[idx] = ext_desc.handle.win32.handle;
-#else
-    CUDA_EXTERNAL_MEMORY_HANDLE_DESC ext_desc = {
-        .type = CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD,
-        .size = size,
-    };
-    VkMemoryGetFdInfoKHR export_info = {
-        .sType      = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
-        .memory     = mem,
-        .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHR,
-    };
-
-    ret = vk->GetMemoryFdKHR(hwctx->act_dev, &export_info,
-                             &ext_desc.handle.fd);
-    if (ret != VK_SUCCESS) {
-        av_log(ctx, AV_LOG_ERROR, "Unable to export the image as a FD: %s!\n",
-               ff_vk_ret2str(ret));
-        return AVERROR_EXTERNAL;
-    }
-#endif
-
-    ret = CHECK_CU(cu->cuImportExternalMemory(&dst_int->ext_mem[idx], &ext_desc));
-    if (ret < 0) {
-#ifndef _WIN32
-        close(ext_desc.handle.fd);
-#endif
-        return AVERROR_EXTERNAL;
-    }
-
-    return 0;
-}
-
-static int export_sem_to_cuda(AVHWDeviceContext *ctx,
-                              AVHWDeviceContext *cuda_cu, CudaFunctions *cu,
-                              AVVkFrameInternal *dst_int, int idx,
-                              VkSemaphore sem)
-{
-    VkResult ret;
-    VulkanDevicePriv *p = ctx->hwctx;
-    AVVulkanDeviceContext *hwctx = &p->p;
-    FFVulkanFunctions *vk = &p->vkctx.vkfn;
-
-#ifdef _WIN32
-    VkSemaphoreGetWin32HandleInfoKHR sem_export = {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR,
-        .semaphore = sem,
-        .handleType = IsWindows8OrGreater()
-                      ? VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT
-                      : VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT,
-    };
-    CUDA_EXTERNAL_SEMAPHORE_HANDLE_DESC ext_sem_desc = {
-        .type = 10 /* TODO: CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TIMELINE_SEMAPHORE_WIN32 */,
-    };
-#else
-    VkSemaphoreGetFdInfoKHR sem_export = {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR,
-        .semaphore = sem,
-        .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT,
-    };
-    CUDA_EXTERNAL_SEMAPHORE_HANDLE_DESC ext_sem_desc = {
-        .type = 9 /* TODO: CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TIMELINE_SEMAPHORE_FD */,
-    };
-#endif
-
-#ifdef _WIN32
-    ret = vk->GetSemaphoreWin32HandleKHR(hwctx->act_dev, &sem_export,
-                                         &ext_sem_desc.handle.win32.handle);
-#else
-    ret = vk->GetSemaphoreFdKHR(hwctx->act_dev, &sem_export,
-                                &ext_sem_desc.handle.fd);
-#endif
-    if (ret != VK_SUCCESS) {
-        av_log(ctx, AV_LOG_ERROR, "Failed to export semaphore: %s\n",
-               ff_vk_ret2str(ret));
-        return AVERROR_EXTERNAL;
-    }
-#ifdef _WIN32
-    dst_int->ext_sem_handle[idx] = ext_sem_desc.handle.win32.handle;
-#endif
-
-    ret = CHECK_CU(cu->cuImportExternalSemaphore(&dst_int->cu_sem[idx],
-                                                 &ext_sem_desc));
-    if (ret < 0) {
-#ifndef _WIN32
-        close(ext_sem_desc.handle.fd);
-#endif
-        return AVERROR_EXTERNAL;
-    }
-
-    return 0;
-}
-
 static int vulkan_export_to_cuda(AVHWFramesContext *hwfc,
                                  AVBufferRef *cuda_hwfc,
                                  const AVFrame *frame)
@@ -3951,7 +3789,6 @@ static int vulkan_export_to_cuda(AVHWFramesContext *hwfc,
     VulkanDevicePriv *p = ctx->hwctx;
     AVVulkanDeviceContext *hwctx = &p->p;
     FFVulkanFunctions *vk = &p->vkctx.vkfn;
-    int nb_images;
 
     AVHWFramesContext *cuda_fc = (AVHWFramesContext*)cuda_hwfc->data;
     AVHWDeviceContext *cuda_cu = cuda_fc->device_ctx;
@@ -3965,42 +3802,13 @@ static int vulkan_export_to_cuda(AVHWFramesContext *hwfc,
     dst_int = dst_f->internal;
 
     if (!dst_int->cuda_fc_ref) {
-        size_t offsets[3] = { 0 };
-
         dst_int->cuda_fc_ref = av_buffer_ref(cuda_hwfc);
         if (!dst_int->cuda_fc_ref)
             return AVERROR(ENOMEM);
 
-        nb_images = ff_vk_count_images(dst_f);
-        for (int i = 0; i < nb_images; i++) {
-            err = export_mem_to_cuda(ctx, cuda_cu, cu, dst_int, i,
-                                     dst_f->mem[i], dst_f->size[i]);
-            if (err < 0)
-                goto fail;
-
-            err = export_sem_to_cuda(ctx, cuda_cu, cu, dst_int, i,
-                                     dst_f->sem[i]);
-            if (err < 0)
-                goto fail;
-        }
-
-        if (nb_images != planes) {
-            for (int i = 0; i < planes; i++) {
-                VkImageSubresource subres = {
-                    .aspectMask = i == 2 ? VK_IMAGE_ASPECT_MEMORY_PLANE_2_BIT_EXT :
-                                  i == 1 ? VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT :
-                                           VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT
-                };
-                VkSubresourceLayout layout = { 0 };
-                vk->GetImageSubresourceLayout(hwctx->act_dev, dst_f->img[FFMIN(i, nb_images - 1)],
-                                              &subres, &layout);
-                offsets[i] = layout.offset;
-            }
-        }
-
         for (int i = 0; i < planes; i++) {
             CUDA_EXTERNAL_MEMORY_MIPMAPPED_ARRAY_DESC tex_desc = {
-                .offset = offsets[i],
+                .offset = 0,
                 .arrayDesc = {
                     .Depth = 0,
                     .Format = cufmt,
@@ -4011,12 +3819,84 @@ static int vulkan_export_to_cuda(AVHWFramesContext *hwfc,
             };
             int p_w, p_h;
 
+#ifdef _WIN32
+            CUDA_EXTERNAL_MEMORY_HANDLE_DESC ext_desc = {
+                .type = IsWindows8OrGreater()
+                    ? CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32
+                    : CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT,
+                .size = dst_f->size[i],
+            };
+            VkMemoryGetWin32HandleInfoKHR export_info = {
+                .sType      = VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR,
+                .memory     = dst_f->mem[i],
+                .handleType = IsWindows8OrGreater()
+                    ? VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT
+                    : VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT,
+            };
+            VkSemaphoreGetWin32HandleInfoKHR sem_export = {
+                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR,
+                .semaphore = dst_f->sem[i],
+                .handleType = IsWindows8OrGreater()
+                    ? VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT
+                    : VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT,
+            };
+            CUDA_EXTERNAL_SEMAPHORE_HANDLE_DESC ext_sem_desc = {
+                .type = 10 /* TODO: CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TIMELINE_SEMAPHORE_WIN32 */,
+            };
+
+            ret = vk->GetMemoryWin32HandleKHR(hwctx->act_dev, &export_info,
+                                              &ext_desc.handle.win32.handle);
+            if (ret != VK_SUCCESS) {
+                av_log(hwfc, AV_LOG_ERROR, "Unable to export the image as a Win32 Handle: %s!\n",
+                       ff_vk_ret2str(ret));
+                err = AVERROR_EXTERNAL;
+                goto fail;
+            }
+            dst_int->ext_mem_handle[i] = ext_desc.handle.win32.handle;
+#else
+            CUDA_EXTERNAL_MEMORY_HANDLE_DESC ext_desc = {
+                .type = CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD,
+                .size = dst_f->size[i],
+            };
+            VkMemoryGetFdInfoKHR export_info = {
+                .sType      = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
+                .memory     = dst_f->mem[i],
+                .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHR,
+            };
+            VkSemaphoreGetFdInfoKHR sem_export = {
+                .sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR,
+                .semaphore = dst_f->sem[i],
+                .handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT,
+            };
+            CUDA_EXTERNAL_SEMAPHORE_HANDLE_DESC ext_sem_desc = {
+                .type = 9 /* TODO: CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TIMELINE_SEMAPHORE_FD */,
+            };
+
+            ret = vk->GetMemoryFdKHR(hwctx->act_dev, &export_info,
+                                     &ext_desc.handle.fd);
+            if (ret != VK_SUCCESS) {
+                av_log(hwfc, AV_LOG_ERROR, "Unable to export the image as a FD: %s!\n",
+                       ff_vk_ret2str(ret));
+                err = AVERROR_EXTERNAL;
+                goto fail;
+            }
+#endif
+
+            ret = CHECK_CU(cu->cuImportExternalMemory(&dst_int->ext_mem[i], &ext_desc));
+            if (ret < 0) {
+#ifndef _WIN32
+                close(ext_desc.handle.fd);
+#endif
+                err = AVERROR_EXTERNAL;
+                goto fail;
+            }
+
             get_plane_wh(&p_w, &p_h, hwfc->sw_format, hwfc->width, hwfc->height, i);
             tex_desc.arrayDesc.Width = p_w;
             tex_desc.arrayDesc.Height = p_h;
 
             ret = CHECK_CU(cu->cuExternalMemoryGetMappedMipmappedArray(&dst_int->cu_mma[i],
-                                                                       dst_int->ext_mem[FFMIN(i, nb_images - 1)],
+                                                                       dst_int->ext_mem[i],
                                                                        &tex_desc));
             if (ret < 0) {
                 err = AVERROR_EXTERNAL;
@@ -4030,6 +3910,32 @@ static int vulkan_export_to_cuda(AVHWFramesContext *hwfc,
                 goto fail;
             }
 
+#ifdef _WIN32
+            ret = vk->GetSemaphoreWin32HandleKHR(hwctx->act_dev, &sem_export,
+                                                 &ext_sem_desc.handle.win32.handle);
+#else
+            ret = vk->GetSemaphoreFdKHR(hwctx->act_dev, &sem_export,
+                                        &ext_sem_desc.handle.fd);
+#endif
+            if (ret != VK_SUCCESS) {
+                av_log(ctx, AV_LOG_ERROR, "Failed to export semaphore: %s\n",
+                       ff_vk_ret2str(ret));
+                err = AVERROR_EXTERNAL;
+                goto fail;
+            }
+#ifdef _WIN32
+            dst_int->ext_sem_handle[i] = ext_sem_desc.handle.win32.handle;
+#endif
+
+            ret = CHECK_CU(cu->cuImportExternalSemaphore(&dst_int->cu_sem[i],
+                                                         &ext_sem_desc));
+            if (ret < 0) {
+#ifndef _WIN32
+                close(ext_sem_desc.handle.fd);
+#endif
+                err = AVERROR_EXTERNAL;
+                goto fail;
+            }
         }
     }
 
@@ -4272,6 +4178,7 @@ static int vulkan_map_to_drm(AVHWFramesContext *hwfc, AVFrame *dst,
     AVVulkanDeviceContext *hwctx = &p->p;
     FFVulkanFunctions *vk = &p->vkctx.vkfn;
     VulkanFramesPriv *fp = hwfc->hwctx;
+    AVVulkanFramesContext *hwfctx = &fp->p;
     const int planes = av_pix_fmt_count_planes(hwfc->sw_format);
     const int nb_images = ff_vk_count_images(f);
     VkImageDrmFormatModifierPropertiesEXT drm_mod = {
@@ -4527,32 +4434,38 @@ static int get_plane_buf(AVHWFramesContext *hwfc, AVBufferRef **dst,
                          AVFrame *swf, VkBufferImageCopy *region, int upload)
 {
     int err;
-    uint32_t p_w, p_h;
     VulkanFramesPriv *fp = hwfc->hwctx;
     VulkanDevicePriv *p = hwfc->device_ctx->hwctx;
     const int planes = av_pix_fmt_count_planes(swf->format);
-    VkBufferUsageFlags buf_usage = upload ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT :
-                                            VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
     size_t buf_offset = 0;
     for (int i = 0; i < planes; i++) {
+        size_t size;
+        ptrdiff_t linesize = swf->linesize[i];
+
+        uint32_t p_w, p_h;
         get_plane_wh(&p_w, &p_h, swf->format, swf->width, swf->height, i);
+
+        linesize = FFALIGN(linesize,
+                           p->props.properties.limits.optimalBufferCopyRowPitchAlignment);
+        size = p_h*linesize;
 
         region[i] = (VkBufferImageCopy) {
             .bufferOffset = buf_offset,
-            .bufferRowLength = FFALIGN(swf->linesize[i],
-                                       p->props.properties.limits.optimalBufferCopyRowPitchAlignment),
+            .bufferRowLength = linesize,
             .bufferImageHeight = p_h,
             .imageSubresource.layerCount = 1,
             .imageExtent = (VkExtent3D){ p_w, p_h, 1 },
             /* Rest of the fields adjusted/filled in later */
         };
 
-        buf_offset += FFALIGN(p_h*region[i].bufferRowLength,
-                              p->props.properties.limits.optimalBufferCopyOffsetAlignment);
+        buf_offset = FFALIGN(buf_offset + size,
+                             p->props.properties.limits.optimalBufferCopyOffsetAlignment);
     }
 
-    err = ff_vk_get_pooled_buffer(&p->vkctx, &fp->tmp, dst, buf_usage,
+    err = ff_vk_get_pooled_buffer(&p->vkctx, &fp->tmp, dst,
+                                  VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                                  VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                   NULL, buf_offset,
                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                   p->vkctx.host_cached_flag);
@@ -4562,53 +4475,155 @@ static int get_plane_buf(AVHWFramesContext *hwfc, AVBufferRef **dst,
     return 0;
 }
 
+static int create_mapped_buffer(AVHWFramesContext *hwfc,
+                                FFVkBuffer *vkb, VkBufferUsageFlags usage,
+                                size_t size,
+                                VkExternalMemoryBufferCreateInfo *create_desc,
+                                VkImportMemoryHostPointerInfoEXT *import_desc,
+                                VkMemoryHostPointerPropertiesEXT props)
+{
+    int err;
+    VkResult ret;
+    VulkanDevicePriv *p = hwfc->device_ctx->hwctx;
+    FFVulkanFunctions *vk = &p->vkctx.vkfn;
+    AVVulkanDeviceContext *hwctx = &p->p;
+
+    VkBufferCreateInfo buf_spawn = {
+        .sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext       = create_desc,
+        .usage       = usage,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .size        = size,
+    };
+    VkMemoryRequirements req = {
+        .size           = size,
+        .alignment      = p->hprops.minImportedHostPointerAlignment,
+        .memoryTypeBits = props.memoryTypeBits,
+    };
+
+    err = ff_vk_alloc_mem(&p->vkctx, &req,
+                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                          import_desc, &vkb->flags, &vkb->mem);
+    if (err < 0)
+        return err;
+
+    ret = vk->CreateBuffer(hwctx->act_dev, &buf_spawn, hwctx->alloc, &vkb->buf);
+    if (ret != VK_SUCCESS) {
+        vk->FreeMemory(hwctx->act_dev, vkb->mem, hwctx->alloc);
+        return AVERROR_EXTERNAL;
+    }
+
+    ret = vk->BindBufferMemory(hwctx->act_dev, vkb->buf, vkb->mem, 0);
+    if (ret != VK_SUCCESS) {
+        vk->FreeMemory(hwctx->act_dev, vkb->mem, hwctx->alloc);
+        vk->DestroyBuffer(hwctx->act_dev, vkb->buf, hwctx->alloc);
+        return AVERROR_EXTERNAL;
+    }
+
+    return 0;
+}
+
+static void destroy_avvkbuf(void *opaque, uint8_t *data)
+{
+    FFVulkanContext *s = opaque;
+    FFVkBuffer *buf = (FFVkBuffer *)data;
+    ff_vk_free_buf(s, buf);
+    av_free(buf);
+}
+
 static int host_map_frame(AVHWFramesContext *hwfc, AVBufferRef **dst, int *nb_bufs,
                           AVFrame *swf, VkBufferImageCopy *region, int upload)
 {
     int err;
+    VkResult ret;
     VulkanDevicePriv *p = hwfc->device_ctx->hwctx;
+    FFVulkanFunctions *vk = &p->vkctx.vkfn;
+    AVVulkanDeviceContext *hwctx = &p->p;
 
-    int nb_src_bufs;
     const int planes = av_pix_fmt_count_planes(swf->format);
-    VkBufferUsageFlags buf_usage = upload ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT :
-                                            VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
-    /* We can't host map images with negative strides */
-    for (int i = 0; i < planes; i++)
-        if (swf->linesize[i] < 0)
-            return AVERROR(EINVAL);
+    VkExternalMemoryBufferCreateInfo create_desc = {
+        .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO,
+        .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT,
+    };
+    VkImportMemoryHostPointerInfoEXT import_desc = {
+        .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT,
+        .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT,
+    };
+    VkMemoryHostPointerPropertiesEXT props;
 
-    /* Count the number of buffers in the software frame */
-    nb_src_bufs = 0;
-    while (swf->buf[nb_src_bufs])
-        nb_src_bufs++;
+    for (int i = 0; i < planes; i++) {
+        FFVkBuffer *vkb;
+        uint32_t p_w, p_h;
+        size_t offs;
+        size_t buffer_size;
 
-    /* Single buffer contains all planes */
-    if (nb_src_bufs == 1) {
-        err = ff_vk_host_map_buffer(&p->vkctx, &dst[0],
-                                    swf->data[0], swf->buf[0],
-                                    buf_usage);
-        if (err < 0)
-            return err;
-        (*nb_bufs)++;
-
-        for (int i = 0; i < planes; i++)
-            region[i].bufferOffset = ((FFVkBuffer *)dst[0]->data)->virtual_offset +
-                                     swf->data[i] - swf->data[0];
-    } else if (nb_src_bufs == planes) { /* One buffer per plane */
-        for (int i = 0; i < planes; i++) {
-            err = ff_vk_host_map_buffer(&p->vkctx, &dst[i],
-                                        swf->data[i], swf->buf[i],
-                                        buf_usage);
-            if (err < 0)
-                goto fail;
-            (*nb_bufs)++;
-
-            region[i].bufferOffset = ((FFVkBuffer *)dst[i]->data)->virtual_offset;
+        /* We can't host map images with negative strides */
+        if (swf->linesize[i] < 0) {
+            err = AVERROR(EINVAL);
+            goto fail;
         }
-    } else {
-        /* Weird layout (3 planes, 2 buffers), patch welcome, fallback to copy */
-        return AVERROR_PATCHWELCOME;
+
+        get_plane_wh(&p_w, &p_h, swf->format, swf->width, swf->height, i);
+
+        /* Get the previous point at which mapping was possible and use it */
+        offs = (uintptr_t)swf->data[i] % p->hprops.minImportedHostPointerAlignment;
+        import_desc.pHostPointer = swf->data[i] - offs;
+
+        props = (VkMemoryHostPointerPropertiesEXT) {
+            VK_STRUCTURE_TYPE_MEMORY_HOST_POINTER_PROPERTIES_EXT,
+        };
+        ret = vk->GetMemoryHostPointerPropertiesEXT(hwctx->act_dev,
+                                                    import_desc.handleType,
+                                                    import_desc.pHostPointer,
+                                                    &props);
+        if (!(ret == VK_SUCCESS && props.memoryTypeBits)) {
+            err = AVERROR(EINVAL);
+            goto fail;
+        }
+
+        /* Buffer region for this plane */
+        region[i] = (VkBufferImageCopy) {
+            .bufferOffset = offs,
+            .bufferRowLength = swf->linesize[i],
+            .bufferImageHeight = p_h,
+            .imageSubresource.layerCount = 1,
+            .imageExtent = (VkExtent3D){ p_w, p_h, 1 },
+            /* Rest of the fields adjusted/filled in later */
+        };
+
+        /* Add the offset at the start, which gets ignored */
+        buffer_size = offs + swf->linesize[i]*p_h;
+        buffer_size = FFALIGN(buffer_size, p->props.properties.limits.minMemoryMapAlignment);
+        buffer_size = FFALIGN(buffer_size, p->hprops.minImportedHostPointerAlignment);
+
+        /* Create a buffer */
+        vkb = av_mallocz(sizeof(*vkb));
+        if (!vkb) {
+            err = AVERROR(ENOMEM);
+            goto fail;
+        }
+
+        err = create_mapped_buffer(hwfc, vkb,
+                                   upload ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT :
+                                            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                   buffer_size, &create_desc, &import_desc,
+                                   props);
+        if (err < 0) {
+            av_free(vkb);
+            goto fail;
+        }
+
+        /* Create a ref */
+        dst[*nb_bufs] = av_buffer_create((uint8_t *)vkb, sizeof(*vkb),
+                                         destroy_avvkbuf, &p->vkctx, 0);
+        if (!dst[*nb_bufs]) {
+            destroy_avvkbuf(&p->vkctx, (uint8_t *)vkb);
+            err = AVERROR(ENOMEM);
+            goto fail;
+        }
+
+        (*nb_bufs)++;
     }
 
     return 0;
@@ -4937,7 +4952,6 @@ static int vulkan_transfer_data_to_cuda(AVHWFramesContext *hwfc, AVFrame *dst,
     VulkanFramesPriv *fp = hwfc->hwctx;
     const int planes = av_pix_fmt_count_planes(hwfc->sw_format);
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(hwfc->sw_format);
-    int nb_images;
 
     AVHWFramesContext *cuda_fc = (AVHWFramesContext*)dst->hw_frames_ctx->data;
     AVHWDeviceContext *cuda_cu = cuda_fc->device_ctx;
@@ -4948,7 +4962,6 @@ static int vulkan_transfer_data_to_cuda(AVHWFramesContext *hwfc, AVFrame *dst,
     CUDA_EXTERNAL_SEMAPHORE_SIGNAL_PARAMS s_s_par[AV_NUM_DATA_POINTERS] = { 0 };
 
     dst_f = (AVVkFrame *)src->data[0];
-    nb_images = ff_vk_count_images(dst_f);
 
     err = prepare_frame(hwfc, &fp->upload_exec, dst_f, PREP_MODE_EXTERNAL_EXPORT);
     if (err < 0)
@@ -4972,7 +4985,7 @@ static int vulkan_transfer_data_to_cuda(AVHWFramesContext *hwfc, AVFrame *dst,
     }
 
     err = CHECK_CU(cu->cuWaitExternalSemaphoresAsync(dst_int->cu_sem, s_w_par,
-                                                     nb_images, cuda_dev->stream));
+                                                     planes, cuda_dev->stream));
     if (err < 0)
         goto fail;
 
@@ -4999,7 +5012,7 @@ static int vulkan_transfer_data_to_cuda(AVHWFramesContext *hwfc, AVFrame *dst,
     }
 
     err = CHECK_CU(cu->cuSignalExternalSemaphoresAsync(dst_int->cu_sem, s_s_par,
-                                                       nb_images, cuda_dev->stream));
+                                                       planes, cuda_dev->stream));
     if (err < 0)
         goto fail;
 

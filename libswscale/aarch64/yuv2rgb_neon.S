@@ -220,7 +220,7 @@
 .endm
 
 .macro load_chroma_yuv422p
-        load_chroma_yuv420p
+    load_chroma_yuv420p
 .endm
 
 .macro increment_nv12
@@ -230,7 +230,7 @@
 .endm
 
 .macro increment_nv21
-        increment_nv12
+    increment_nv12
 .endm
 
 .macro increment_yuv420p
@@ -460,7 +460,7 @@ function ff_\ifmt\()_to_\ofmt\()_neon, export=1
         add             x15, x15, w16, sxtw                             // dst2 += padding2
 .endif
         add             x4, x4, w5, sxtw                                // srcY += paddingY
-        increment_\ifmt
+    increment_\ifmt
         subs            w1, w1, #1                                      // height -= 1
         b.gt            1b
         mov             w0, w9

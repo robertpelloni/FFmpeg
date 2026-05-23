@@ -144,11 +144,11 @@ typedef struct VVCFrameContext {
 
     uint64_t decode_order;
 
-    struct AVRefStructPool *tab_dmvr_mvf_pool;
-    struct AVRefStructPool *rpl_tab_pool;
+    struct FFRefStructPool *tab_dmvr_mvf_pool;
+    struct FFRefStructPool *rpl_tab_pool;
 
-    struct AVRefStructPool *cu_pool;
-    struct AVRefStructPool *tu_pool;
+    struct FFRefStructPool *cu_pool;
+    struct FFRefStructPool *tu_pool;
 
     struct {
         int16_t *slice_idx;
@@ -167,7 +167,9 @@ typedef struct VVCFrameContext {
         uint8_t *skip;                                  ///< CuSkipFlag[][]
         uint8_t *ispmf;                                 ///< intra_sub_partitions_mode_flag
         uint8_t *msm[2];                                ///< MttSplitMode[][][] in 32 pixels
-        uint8_t *imf;                                   ///< IntraMipFlag[][], intra_mip_transposed_flag[][], intra_mip_mode[][]
+        uint8_t *imf;                                   ///< IntraMipFlag[][]
+        uint8_t *imtf;                                  ///< intra_mip_transposed_flag[][]
+        uint8_t *imm;                                   ///< intra_mip_mode[][]
         uint8_t *ipm;                                   ///< IntraPredModeY[][]
         uint8_t *cpm[2];                                ///< CuPredMode[][][]
         uint8_t *msf;                                   ///< MergeSubblockFlag[][]

@@ -99,7 +99,6 @@ static int unix_open(URLContext *h, const char *filename, int flags)
     }
 
     s->fd = fd;
-    h->is_streamed = 1;
 
     if ((s->type == SOCK_DGRAM || s->type == SOCK_SEQPACKET) && s->pkt_size > 0)
         h->max_packet_size = s->pkt_size;

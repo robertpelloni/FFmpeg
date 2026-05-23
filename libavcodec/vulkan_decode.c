@@ -123,9 +123,7 @@ static const VkVideoProfileInfoKHR *get_video_profile(FFVulkanDecodeShared *ctx,
         codec_id == AV_CODEC_ID_VP9  ? VK_STRUCTURE_TYPE_VIDEO_DECODE_VP9_PROFILE_INFO_KHR :
 #endif
         codec_id == AV_CODEC_ID_AV1  ? VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_PROFILE_INFO_KHR :
-                                       VK_STRUCTURE_TYPE_MAX_ENUM;
-    if (profile_struct_type == VK_STRUCTURE_TYPE_MAX_ENUM)
-        return NULL;
+        0;
 
     profile_list = ff_vk_find_struct(ctx->s.hwfc->create_pnext,
                                      VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR);
@@ -145,11 +143,32 @@ int ff_vk_update_thread_context(AVCodecContext *dst, const AVCodecContext *src)
     FFVulkanDecodeContext *src_ctx = src->internal->hwaccel_priv_data;
     FFVulkanDecodeContext *dst_ctx = dst->internal->hwaccel_priv_data;
 
-    av_refstruct_replace(&dst_ctx->shared_ctx, src_ctx->shared_ctx);
+    if (!dst_ctx->exec_pool.cmd_bufs) {
+        FFVulkanDecodeShared *ctx = src_ctx->shared_ctx;
 
-    err = av_buffer_replace(&dst_ctx->session_params, src_ctx->session_params);
-    if (err < 0)
-        return err;
+        const VkVideoProfileInfoKHR *profile = get_video_profile(ctx, dst->codec_id);
+        if (!profile) {
+            av_log(dst, AV_LOG_ERROR, "Video profile missing from frames context!\n");
+            return AVERROR(EINVAL);
+        }
+
+        err = ff_vk_exec_pool_init(&ctx->s, &ctx->qf,
+                                   &dst_ctx->exec_pool,
+                                   src_ctx->exec_pool.pool_size,
+                                   src_ctx->exec_pool.nb_queries,
+                                   VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR, 0,
+                                   profile);
+        if (err < 0)
+            return err;
+    }
+
+    ff_refstruct_replace(&dst_ctx->shared_ctx, src_ctx->shared_ctx);
+
+    if (src_ctx->session_params) {
+        err = av_buffer_replace(&dst_ctx->session_params, src_ctx->session_params);
+        if (err < 0)
+            return err;
+    }
 
     dst_ctx->dedicated_dpb = src_ctx->dedicated_dpb;
     dst_ctx->external_fg = src_ctx->external_fg;
@@ -201,19 +220,26 @@ int ff_vk_decode_prepare_frame(FFVulkanDecodeContext *dec, AVFrame *pic,
 {
     int err;
     FFVulkanDecodeShared *ctx = dec->shared_ctx;
+    FFVulkanFunctions *vk = &ctx->s.vkfn;
 
     vkpic->slices_size = 0;
 
     /* If the decoder made a blank frame to make up for a missing ref, or the
      * frame is the current frame so it's missing one, create a re-representation */
-    if (vkpic->view.ref[0])
+    if (vkpic->img_view_ref)
         return 0;
 
-    init_frame(dec, vkpic);
+    vkpic->dpb_frame     = NULL;
+    vkpic->img_view_ref  = VK_NULL_HANDLE;
+    vkpic->img_view_out  = VK_NULL_HANDLE;
+    vkpic->img_view_dest = VK_NULL_HANDLE;
+
+    vkpic->destroy_image_view = vk->DestroyImageView;
+    vkpic->wait_semaphores = vk->WaitSemaphores;
 
     if (ctx->common.layered_dpb && alloc_dpb) {
-        vkpic->view.ref[0] = ctx->common.layered_view;
-        vkpic->view.aspect_ref[0] = ctx->common.layered_aspect;
+        vkpic->img_view_ref = ctx->common.layered_view;
+        vkpic->img_aspect_ref = ctx->common.layered_aspect;
     } else if (alloc_dpb) {
         AVHWFramesContext *dpb_frames = (AVHWFramesContext *)ctx->common.dpb_hwfc_ref->data;
         AVVulkanFramesContext *dpb_hwfc = dpb_frames->hwctx;
@@ -223,13 +249,13 @@ int ff_vk_decode_prepare_frame(FFVulkanDecodeContext *dec, AVFrame *pic,
             return AVERROR(ENOMEM);
 
         err = ff_vk_create_view(&ctx->s, &ctx->common,
-                                &vkpic->view.ref[0], &vkpic->view.aspect_ref[0],
+                                &vkpic->img_view_ref, &vkpic->img_aspect_ref,
                                 (AVVkFrame *)vkpic->dpb_frame->data[0],
                                 dpb_hwfc->format[0], VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR);
         if (err < 0)
             return err;
 
-        vkpic->view.dst[0] = vkpic->view.ref[0];
+        vkpic->img_view_dest = vkpic->img_view_ref;
     }
 
     if (!alloc_dpb || is_current) {
@@ -237,7 +263,7 @@ int ff_vk_decode_prepare_frame(FFVulkanDecodeContext *dec, AVFrame *pic,
         AVVulkanFramesContext *hwfc = frames->hwctx;
 
         err = ff_vk_create_view(&ctx->s, &ctx->common,
-                                &vkpic->view.out[0], &vkpic->view.aspect[0],
+                                &vkpic->img_view_out, &vkpic->img_aspect,
                                 (AVVkFrame *)pic->data[0],
                                 hwfc->format[0],
                                 VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
@@ -247,55 +273,8 @@ int ff_vk_decode_prepare_frame(FFVulkanDecodeContext *dec, AVFrame *pic,
             return err;
 
         if (!alloc_dpb) {
-            vkpic->view.ref[0] = vkpic->view.out[0];
-            vkpic->view.aspect_ref[0] = vkpic->view.aspect[0];
-        }
-    }
-
-    return 0;
-}
-
-int ff_vk_decode_prepare_frame_sdr(FFVulkanDecodeContext *dec, AVFrame *pic,
-                                   FFVulkanDecodePicture *vkpic, int is_current,
-                                   enum FFVkShaderRepFormat rep_fmt, int alloc_dpb)
-{
-    int err;
-    FFVulkanDecodeShared *ctx = dec->shared_ctx;
-    AVHWFramesContext *frames = (AVHWFramesContext *)pic->hw_frames_ctx->data;
-
-    vkpic->slices_size = 0;
-
-    if (vkpic->view.ref[0])
-        return 0;
-
-    init_frame(dec, vkpic);
-
-    for (int i = 0; i < av_pix_fmt_count_planes(frames->sw_format); i++) {
-        if (alloc_dpb) {
-            vkpic->dpb_frame = vk_get_dpb_pool(ctx);
-            if (!vkpic->dpb_frame)
-                return AVERROR(ENOMEM);
-
-            err = ff_vk_create_imageview(&ctx->s,
-                                         &vkpic->view.ref[i], &vkpic->view.aspect_ref[i],
-                                         vkpic->dpb_frame, i, rep_fmt);
-            if (err < 0)
-                return err;
-
-            vkpic->view.dst[i] = vkpic->view.ref[i];
-        }
-
-        if (!alloc_dpb || is_current) {
-            err = ff_vk_create_imageview(&ctx->s,
-                                         &vkpic->view.out[i], &vkpic->view.aspect[i],
-                                         pic, i, rep_fmt);
-            if (err < 0)
-                return err;
-
-            if (!alloc_dpb) {
-                vkpic->view.ref[i] = vkpic->view.out[i];
-                vkpic->view.aspect_ref[i] = vkpic->view.aspect[i];
-            }
+            vkpic->img_view_ref = vkpic->img_view_out;
+            vkpic->img_aspect_ref = vkpic->img_aspect;
         }
     }
 
@@ -311,7 +290,7 @@ int ff_vk_decode_add_slice(AVCodecContext *avctx, FFVulkanDecodePicture *vp,
 
     static const uint8_t startcode_prefix[3] = { 0x0, 0x0, 0x1 };
     const size_t startcode_len = add_startcode ? sizeof(startcode_prefix) : 0;
-    const int nb = nb_slices ? *nb_slices : 0;
+    const int nb = *nb_slices;
     uint8_t *slices;
     uint32_t *slice_off;
     FFVkBuffer *vkbuf;
@@ -320,16 +299,13 @@ int ff_vk_decode_add_slice(AVCodecContext *avctx, FFVulkanDecodePicture *vp,
                       ctx->caps.minBitstreamBufferSizeAlignment;
     new_size = FFALIGN(new_size, ctx->caps.minBitstreamBufferSizeAlignment);
 
-    if (offsets) {
-        slice_off = av_fast_realloc(dec->slice_off, &dec->slice_off_max,
-                                    (nb + 1)*sizeof(slice_off));
-        if (!slice_off)
-            return AVERROR(ENOMEM);
+    slice_off = av_fast_realloc(dec->slice_off, &dec->slice_off_max,
+                                (nb + 1)*sizeof(slice_off));
+    if (!slice_off)
+        return AVERROR(ENOMEM);
 
-        *offsets = dec->slice_off = slice_off;
-
-        slice_off[nb] = vp->slices_size;
-    }
+    *offsets = dec->slice_off = slice_off;
+    slice_off[nb] = vp->slices_size;
 
     vkbuf = vp->slices_buf ? (FFVkBuffer *)vp->slices_buf->data : NULL;
     if (!vkbuf || vkbuf->size < new_size) {
@@ -354,9 +330,6 @@ int ff_vk_decode_add_slice(AVCodecContext *avctx, FFVulkanDecodePicture *vp,
                                                   VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR);
 
         err = ff_vk_get_pooled_buffer(&ctx->s, &ctx->buf_pool, &new_ref,
-                                      DECODER_IS_SDR(avctx->codec_id) ?
-                                      (VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) :
                                       VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR,
                                       buf_pnext, buf_size,
                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
@@ -384,9 +357,7 @@ int ff_vk_decode_add_slice(AVCodecContext *avctx, FFVulkanDecodePicture *vp,
     /* Slice data */
     memcpy(slices + vp->slices_size + startcode_len, data, size);
 
-    if (nb_slices)
-        *nb_slices = nb + 1;
-
+    *nb_slices = nb + 1;
     vp->slices_size += startcode_len + size;
 
     return 0;
@@ -504,12 +475,11 @@ int ff_vk_decode_frame(AVCodecContext *avctx,
     /* Quirks */
     const int layered_dpb = ctx->common.layered_dpb;
 
+    VkVideoSessionParametersKHR *par = (VkVideoSessionParametersKHR *)dec->session_params->data;
     VkVideoBeginCodingInfoKHR decode_start = {
         .sType = VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR,
         .videoSession = ctx->common.session,
-        .videoSessionParameters = dec->session_params ?
-                                  *((VkVideoSessionParametersKHR *)dec->session_params->data) :
-                                  VK_NULL_HANDLE,
+        .videoSessionParameters = *par,
         .referenceSlotCount = vp->decode_info.referenceSlotCount,
         .pReferenceSlots = vp->decode_info.pReferenceSlots,
     };
@@ -522,7 +492,7 @@ int ff_vk_decode_frame(AVCodecContext *avctx,
     size_t data_size = FFALIGN(vp->slices_size,
                                ctx->caps.minBitstreamBufferSizeAlignment);
 
-    FFVkExecContext *exec = ff_vk_exec_get(&ctx->s, &ctx->exec_pool);
+    FFVkExecContext *exec = ff_vk_exec_get(&ctx->s, &dec->exec_pool);
 
     /* The current decoding reference has to be bound as an inactive reference */
     VkVideoReferenceSlotInfoKHR *cur_vk_ref;
@@ -530,6 +500,22 @@ int ff_vk_decode_frame(AVCodecContext *avctx,
     cur_vk_ref[0] = vp->ref_slot;
     cur_vk_ref[0].slotIndex = -1;
     decode_start.referenceSlotCount++;
+
+    if (dec->exec_pool.nb_queries && exec->had_submission) {
+        uint32_t *result;
+        ret = ff_vk_exec_get_query(&ctx->s, exec, (void **)&result,
+                                   VK_QUERY_RESULT_WAIT_BIT);
+        if (ret != VK_NOT_READY && ret != VK_SUCCESS) {
+            av_log(avctx, AV_LOG_ERROR, "Unable to perform query: %s!\n",
+                   ff_vk_ret2str(ret));
+            return AVERROR_EXTERNAL;
+        }
+
+        av_log(avctx,
+               result[0] != VK_QUERY_RESULT_STATUS_COMPLETE_KHR ?
+                   AV_LOG_ERROR : AV_LOG_DEBUG,
+               "Result of previous frame decoding: %u\n", result[0]);
+    }
 
     sd_buf = (FFVkBuffer *)vp->slices_buf->data;
 
@@ -599,7 +585,7 @@ int ff_vk_decode_frame(AVCodecContext *avctx,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .image = vkf->img[0],
         .subresourceRange = (VkImageSubresourceRange) {
-            .aspectMask = vp->view.aspect[0],
+            .aspectMask = vp->img_aspect,
             .layerCount = 1,
             .levelCount = 1,
         },
@@ -655,7 +641,7 @@ int ff_vk_decode_frame(AVCodecContext *avctx,
                     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                     .image = rvkf->img[0],
                     .subresourceRange = (VkImageSubresourceRange) {
-                        .aspectMask = rvp->view.aspect_ref[0],
+                        .aspectMask = rvp->img_aspect_ref,
                         .layerCount = 1,
                         .levelCount = 1,
                     },
@@ -665,7 +651,7 @@ int ff_vk_decode_frame(AVCodecContext *avctx,
             }
         }
     } else if (vp->decode_info.referenceSlotCount ||
-               vp->view.out[0] != vp->view.ref[0]) {
+               vp->img_view_out != vp->img_view_ref) {
         /* Single barrier for a single layered ref */
         err = ff_vk_exec_add_dep_frame(&ctx->s, exec, ctx->common.layered_frame,
                                        VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR,
@@ -684,7 +670,17 @@ int ff_vk_decode_frame(AVCodecContext *avctx,
 
     /* Start, use parameters, decode and end decoding */
     vk->CmdBeginVideoCodingKHR(cmd_buf, &decode_start);
+
+    /* Start status query */
+    if (dec->exec_pool.nb_queries)
+        vk->CmdBeginQuery(cmd_buf, dec->exec_pool.query_pool, exec->query_idx + 0, 0);
+
     vk->CmdDecodeVideoKHR(cmd_buf, &vp->decode_info);
+
+    /* End status query */
+    if (dec->exec_pool.nb_queries)
+        vk->CmdEndQuery(cmd_buf, dec->exec_pool.query_pool, exec->query_idx + 0);
+
     vk->CmdEndVideoCodingKHR(cmd_buf, &decode_end);
 
     /* End recording and submit for execution */
@@ -712,25 +708,20 @@ void ff_vk_decode_free_frame(AVHWDeviceContext *dev_ctx, FFVulkanDecodePicture *
     av_buffer_unref(&vp->slices_buf);
 
     /* Destroy image view (out) */
-    for (int i = 0; i < AV_NUM_DATA_POINTERS; i++) {
-        if (vp->view.out[i] && vp->view.out[i] != vp->view.dst[i])
-            vp->destroy_image_view(hwctx->act_dev, vp->view.out[i], hwctx->alloc);
+    if (vp->img_view_out && vp->img_view_out != vp->img_view_dest)
+        vp->destroy_image_view(hwctx->act_dev, vp->img_view_out, hwctx->alloc);
 
-        /* Destroy image view (ref, unlayered) */
-        if (vp->view.dst[i])
-            vp->destroy_image_view(hwctx->act_dev, vp->view.dst[i], hwctx->alloc);
-    }
+    /* Destroy image view (ref, unlayered) */
+    if (vp->img_view_dest)
+        vp->destroy_image_view(hwctx->act_dev, vp->img_view_dest, hwctx->alloc);
 
     av_frame_free(&vp->dpb_frame);
 }
 
-static void free_common(AVRefStructOpaque unused, void *obj)
+static void free_common(FFRefStructOpaque unused, void *obj)
 {
     FFVulkanDecodeShared *ctx = obj;
     FFVulkanContext *s = &ctx->s;
-
-    /* Wait on and free execution pool */
-    ff_vk_exec_pool_free(&ctx->s, &ctx->exec_pool);
 
     /* This also frees all references from this pool */
     av_frame_free(&ctx->common.layered_frame);
@@ -739,9 +730,6 @@ static void free_common(AVRefStructOpaque unused, void *obj)
 
     ff_vk_video_common_uninit(s, &ctx->common);
 
-    if (ctx->sd_ctx_free)
-        ctx->sd_ctx_free(ctx);
-
     ff_vk_uninit(s);
 }
 
@@ -749,7 +737,6 @@ static int vulkan_decode_bootstrap(AVCodecContext *avctx, AVBufferRef *frames_re
 {
     int err;
     FFVulkanDecodeContext *dec = avctx->internal->hwaccel_priv_data;
-    const FFVulkanDecodeDescriptor *vk_desc = get_codecdesc(avctx->codec_id);
     AVHWFramesContext *frames = (AVHWFramesContext *)frames_ref->data;
     AVHWDeviceContext *device = (AVHWDeviceContext *)frames->device_ref->data;
     AVVulkanDeviceContext *hwctx = device->hwctx;
@@ -758,7 +745,7 @@ static int vulkan_decode_bootstrap(AVCodecContext *avctx, AVBufferRef *frames_re
     if (dec->shared_ctx)
         return 0;
 
-    dec->shared_ctx = av_refstruct_alloc_ext(sizeof(*ctx), 0, NULL,
+    dec->shared_ctx = ff_refstruct_alloc_ext(sizeof(*ctx), 0, NULL,
                                              free_common);
     if (!dec->shared_ctx)
         return AVERROR(ENOMEM);
@@ -768,18 +755,16 @@ static int vulkan_decode_bootstrap(AVCodecContext *avctx, AVBufferRef *frames_re
     ctx->s.extensions = ff_vk_extensions_to_mask(hwctx->enabled_dev_extensions,
                                                  hwctx->nb_enabled_dev_extensions);
 
-    if (vk_desc->queue_flags & VK_QUEUE_VIDEO_DECODE_BIT_KHR) {
-        if (!(ctx->s.extensions & FF_VK_EXT_VIDEO_DECODE_QUEUE)) {
-            av_log(avctx, AV_LOG_ERROR, "Device does not support the %s extension!\n",
-                   VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME);
-            av_refstruct_unref(&dec->shared_ctx);
-            return AVERROR(ENOSYS);
-        }
+    if (!(ctx->s.extensions & FF_VK_EXT_VIDEO_DECODE_QUEUE)) {
+        av_log(avctx, AV_LOG_ERROR, "Device does not support the %s extension!\n",
+               VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME);
+        ff_refstruct_unref(&dec->shared_ctx);
+        return AVERROR(ENOSYS);
     }
 
     err = ff_vk_load_functions(device, &ctx->s.vkfn, ctx->s.extensions, 1, 1);
     if (err < 0) {
-        av_refstruct_unref(&dec->shared_ctx);
+        ff_refstruct_unref(&dec->shared_ctx);
         return err;
     }
 
@@ -1162,7 +1147,10 @@ int ff_vk_frame_params(AVCodecContext *avctx, AVBufferRef *hw_frames_ctx)
     AVHWFramesContext *frames_ctx = (AVHWFramesContext*)hw_frames_ctx->data;
     AVVulkanFramesContext *hwfc = frames_ctx->hwctx;
     FFVulkanDecodeContext *dec = avctx->internal->hwaccel_priv_data;
-    FFVulkanDecodeProfileData *prof = NULL;
+    FFVulkanDecodeProfileData *prof;
+    FFVulkanDecodeShared *ctx;
+
+    frames_ctx->sw_format = AV_PIX_FMT_NONE;
 
     err = vulkan_decode_bootstrap(avctx, hw_frames_ctx);
     if (err < 0)
@@ -1242,8 +1230,8 @@ int ff_vk_frame_params(AVCodecContext *avctx, AVBufferRef *hw_frames_ctx)
                    VK_IMAGE_USAGE_STORAGE_BIT      |
                    VK_IMAGE_USAGE_SAMPLED_BIT;
 
-    if (prof) {
-        FFVulkanDecodeShared *ctx;
+    if (!dec->dedicated_dpb)
+        hwfc->usage |= VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
 
         hwfc->usage |= VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
         if (!dec->dedicated_dpb)
@@ -1300,10 +1288,14 @@ int ff_vk_decode_create_params(AVBufferRef **par_ref, void *logctx, FFVulkanDeco
 int ff_vk_decode_uninit(AVCodecContext *avctx)
 {
     FFVulkanDecodeContext *dec = avctx->internal->hwaccel_priv_data;
+    FFVulkanDecodeShared *ctx = dec->shared_ctx;
+
+    /* Wait on and free execution pool */
+    ff_vk_exec_pool_free(&ctx->s, &dec->exec_pool);
 
     av_freep(&dec->hevc_headers);
     av_buffer_unref(&dec->session_params);
-    av_refstruct_unref(&dec->shared_ctx);
+    ff_refstruct_unref(&dec->shared_ctx);
     av_freep(&dec->slice_off);
     return 0;
 }
@@ -1329,29 +1321,35 @@ int ff_vk_decode_init(AVCodecContext *avctx)
     /* Initialize contexts */
     ctx = dec->shared_ctx;
     s = &ctx->s;
+    vk = &ctx->s.vkfn;
 
     err = ff_vk_init(s, avctx, NULL, avctx->hw_frames_ctx);
     if (err < 0)
         return err;
 
-    vk_desc = get_codecdesc(avctx->codec_id);
-
     profile = get_video_profile(ctx, avctx->codec_id);
-    if ((vk_desc->queue_flags & VK_QUEUE_VIDEO_DECODE_BIT_KHR) && !profile) {
+    if (!profile) {
         av_log(avctx, AV_LOG_ERROR, "Video profile missing from frames context!");
         return AVERROR(EINVAL);
     }
 
     /* Create queue context */
     vk_desc = get_codecdesc(avctx->codec_id);
-    ctx->qf = ff_vk_qf_find(s, vk_desc->queue_flags, vk_desc->decode_op);
-    if (!ctx->qf) {
+    err = ff_vk_video_qf_init(s, &ctx->qf,
+                              VK_QUEUE_VIDEO_DECODE_BIT_KHR,
+                              vk_desc->decode_op);
+    if (err < 0) {
         av_log(avctx, AV_LOG_ERROR, "Decoding of %s is not supported by this device\n",
                avcodec_get_name(avctx->codec_id));
         return err;
     }
 
-    session_create.queueFamilyIndex = ctx->qf->idx;
+    /* Enable queries if supported */
+    if (s->query_props[ctx->qf.queue_family].queryResultStatusSupport)
+        nb_q = 1;
+
+    session_create.flags = 0x0;
+    session_create.queueFamilyIndex = ctx->qf.queue_family;
     session_create.maxCodedExtent = ctx->caps.maxCodedExtent;
     session_create.maxDpbSlots = ctx->caps.maxDpbSlots;
     session_create.maxActiveReferencePictures = ctx->caps.maxActiveReferencePictures;
@@ -1359,30 +1357,20 @@ int ff_vk_decode_init(AVCodecContext *avctx)
     session_create.referencePictureFormat = session_create.pictureFormat;
     session_create.pStdHeaderVersion = &vk_desc->ext_props;
     session_create.pVideoProfile = profile;
-#ifdef VK_KHR_video_maintenance2
-    if (ctx->s.extensions & FF_VK_EXT_VIDEO_MAINTENANCE_2)
-        session_create.flags = VK_VIDEO_SESSION_CREATE_INLINE_SESSION_PARAMETERS_BIT_KHR;
-#endif
 
     /* Create decode exec context for this specific main thread.
      * 2 async contexts per thread was experimentally determined to be optimal
      * for a majority of streams. */
-    async_depth = 2*ctx->qf->num;
-    /* We don't need more than 2 per thread context */
-    async_depth = FFMIN(async_depth, 2*avctx->thread_count);
-    /* Make sure there are enough async contexts for each thread */
-    async_depth = FFMAX(async_depth, avctx->thread_count);
-
-    err = ff_vk_exec_pool_init(s, ctx->qf, &ctx->exec_pool,
-                               async_depth, 0, 0, 0, profile);
+    err = ff_vk_exec_pool_init(s, &ctx->qf, &dec->exec_pool,
+                               FFMAX(2*ctx->qf.nb_queues, avctx->thread_count),
+                               nb_q, VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR, 0,
+                               profile);
     if (err < 0)
         goto fail;
 
-    if (!DECODER_IS_SDR(avctx->codec_id)) {
-        err = ff_vk_video_common_init(avctx, s, &ctx->common, &session_create);
-        if (err < 0)
-            goto fail;
-    }
+    err = ff_vk_video_common_init(avctx, s, &ctx->common, &session_create);
+    if (err < 0)
+        goto fail;
 
     /* If doing an out-of-place decoding, create a DPB pool */
     if (dec->dedicated_dpb || avctx->codec_id == AV_CODEC_ID_AV1) {

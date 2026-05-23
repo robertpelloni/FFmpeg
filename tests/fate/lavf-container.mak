@@ -102,13 +102,13 @@ fate-lavf-fate-hevc.mp4: CMD = lavf_container_fate "hevc-conformance/HRD_A_Fujit
 fate-lavf-fate-vvc.mkv: CMD = lavf_container_fate "vvc-conformance/VPS_A_3.bit" "" "-bsf:v setts=pts=DTS" "-c:v copy"
 fate-lavf-fate-vvc.mp4: CMD = lavf_container_fate "vvc-conformance/VPS_A_3.bit" "" "" "-c:v copy"
 fate-lavf-fate-vp3.ogg: CMD = lavf_container_fate "vp3/coeff_level64.mkv" "-idct auto"
-fate-lavf-fate-vp8.ogg: CMD = lavf_container_fate "vp8/RRSF49-short.webm" "" "" "-c:a copy"
-fate-lavf-fate-latm: CMD = lavf_container_fate "aac/al04_44.mp4" "" "" "-c:a copy"
-fate-lavf-fate-mv_hevc.mov: CMD = lavf_container_fate "hevc/multiview.mov" "" "" "-c:v copy"
-fate-lavf-fate-mp3: CMD = lavf_container_fate "mp3-conformance/he_32khz.bit" "" "" "-c:a copy"
+fate-lavf-fate-vp8.ogg: CMD = lavf_container_fate "vp8/RRSF49-short.webm" "" "-acodec copy"
+fate-lavf-fate-latm: CMD = lavf_container_fate "aac/al04_44.mp4" "" "-acodec copy"
+fate-lavf-fate-mv_hevc.mov: CMD = lavf_container_fate "hevc/multiview.mov" "" "-c:v copy"
+fate-lavf-fate-mp3: CMD = lavf_container_fate "mp3-conformance/he_32khz.bit" "" "-acodec copy"
 fate-lavf-fate-qtrle_mace6.mov: CMD = lavf_container_fate "qtrle/Animation-16Greys.mov" "-idct auto"
 fate-lavf-fate-cram.avi: CMD = lavf_container_fate "cram/toon.avi" "-idct auto"
-fate-lavf-fate-hevc.flv: CMD = lavf_container_fate "mkv/hdr10tags-both.mkv" "" "" "-c:v copy"
+fate-lavf-fate-hevc.flv: CMD = lavf_container_fate "mkv/hdr10tags-both.mkv" "" "-c:v copy"
 
 FATE_SAMPLES_FFMPEG += $(FATE_LAVF_CONTAINER_FATE)
 fate-lavf-fate fate-lavf: $(FATE_LAVF_CONTAINER_FATE)

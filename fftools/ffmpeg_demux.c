@@ -76,13 +76,13 @@ typedef struct DemuxStream {
 
     int                      wrap_correction_done;
     int                      saw_first_ts;
-    /// dts of the first packet read for this stream (in AV_TIME_BASE units)
+    ///< dts of the first packet read for this stream (in AV_TIME_BASE units)
     int64_t                  first_dts;
 
     /* predicted dts of the next packet read for this stream or (when there are
      * several frames in a packet) of the next frame in current packet (in AV_TIME_BASE units) */
     int64_t                  next_dts;
-    /// dts of the last packet read for this stream (in AV_TIME_BASE units)
+    ///< dts of the last packet read for this stream (in AV_TIME_BASE units)
     int64_t                  dts;
 
     const AVCodecDescriptor *codec_desc;
@@ -99,12 +99,6 @@ typedef struct DemuxStream {
     uint64_t                 nb_packets;
     // combined size of all the packets read
     uint64_t                 data_size;
-    // latest wallclock time at which packet reading resumed after a stall - used for readrate
-    int64_t                  resume_wc;
-    // timestamp of first packet sent after the latest stall - used for readrate
-    int64_t                  resume_pts;
-    // measure of how far behind packet reading is against spceified readrate
-    int64_t                  lag;
 } DemuxStream;
 
 typedef struct DemuxStreamGroup {
@@ -145,7 +139,6 @@ typedef struct Demuxer {
 
     float                 readrate;
     double                readrate_initial_burst;
-    float                 readrate_catchup;
 
     Scheduler            *sch;
 
@@ -520,10 +513,7 @@ static void readrate_sleep(Demuxer *d)
     for (int i = 0; i < f->nb_streams; i++) {
         InputStream *ist = f->streams[i];
         DemuxStream  *ds = ds_from_ist(ist);
-        int64_t stream_ts_offset, pts, now, wc_elapsed, elapsed, lag, max_pts, limit_pts;
-
-        if (ds->discard) continue;
-
+        int64_t stream_ts_offset, pts, now;
         stream_ts_offset = FFMAX(ds->first_dts != AV_NOPTS_VALUE ? ds->first_dts : 0, file_start);
         pts = av_rescale(ds->dts, 1000000, AV_TIME_BASE);
         now = av_gettime_relative();
@@ -1137,8 +1127,7 @@ int ist_filter_add(InputStream *ist, InputFilter *ifilter, int is_simple,
         return AVERROR(ENOMEM);
 
     opts->flags |= IFILTER_FLAG_AUTOROTATE * !!(ds->autorotate) |
-                   IFILTER_FLAG_REINIT     * !!(ds->reinit_filters) |
-                   IFILTER_FLAG_DROPCHANGED* !!(ds->drop_changed);
+                   IFILTER_FLAG_REINIT     * !!(ds->reinit_filters);
 
     return 0;
 }
@@ -1579,17 +1568,6 @@ static int ist_add(const OptionsContext *o, Demuxer *d, AVStream *st, AVDictiona
 
     ds->reinit_filters = -1;
     opt_match_per_stream_int(ist, &o->reinit_filters, ic, st, &ds->reinit_filters);
-
-    ds->drop_changed = 0;
-    opt_match_per_stream_int(ist, &o->drop_changed, ic, st, &ds->drop_changed);
-
-    if (ds->drop_changed && ds->reinit_filters) {
-        if (ds->reinit_filters > 0) {
-            av_log(ist, AV_LOG_ERROR, "drop_changed and reinit_filters both enabled. These are mutually exclusive.\n");
-            return AVERROR(EINVAL);
-        }
-        ds->reinit_filters = 0;
-    }
 
     ist->user_set_discard = AVDISCARD_NONE;
 
@@ -2154,9 +2132,8 @@ int ifile_open(const OptionsContext *o, const char *filename, Scheduler *sch)
     /* open the input file with generic avformat function */
     err = avformat_open_input(&ic, filename, file_iformat, &o->g->format_opts);
     if (err < 0) {
-        if (err != AVERROR_EXIT)
-            av_log(d, AV_LOG_ERROR,
-                   "Error opening input: %s\n", av_err2str(err));
+        av_log(d, AV_LOG_ERROR,
+               "Error opening input: %s\n", av_err2str(err));
         if (err == AVERROR_PROTOCOL_NOT_FOUND)
             av_log(d, AV_LOG_ERROR, "Did you mean file:%s?\n", filename);
         return err;
@@ -2289,22 +2266,9 @@ int ifile_open(const OptionsContext *o, const char *filename, Scheduler *sch)
                    d->readrate_initial_burst);
             return AVERROR(EINVAL);
         }
-        d->readrate_catchup = o->readrate_catchup ? o->readrate_catchup : d->readrate * 1.05;
-        if (d->readrate_catchup < d->readrate) {
-            av_log(d, AV_LOG_ERROR,
-                   "Option -readrate_catchup is %0.3f; it must be at least equal to %0.3f.\n",
-                   d->readrate_catchup, d->readrate);
-            return AVERROR(EINVAL);
-        }
-    } else {
-        if (o->readrate_initial_burst) {
-            av_log(d, AV_LOG_WARNING, "Option -readrate_initial_burst ignored "
-                   "since neither -readrate nor -re were given\n");
-        }
-        if (o->readrate_catchup) {
-            av_log(d, AV_LOG_WARNING, "Option -readrate_catchup ignored "
-                   "since neither -readrate nor -re were given\n");
-        }
+    } else if (o->readrate_initial_burst) {
+        av_log(d, AV_LOG_WARNING, "Option -readrate_initial_burst ignored "
+               "since neither -readrate nor -re were given\n");
     }
 
     /* Add all the streams from the given input file to the demuxer */

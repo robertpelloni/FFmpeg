@@ -199,12 +199,17 @@ static av_cold void gblur_vulkan_uninit(AVFilterContext *avctx)
 {
     GBlurVulkanContext *s = avctx->priv;
     FFVulkanContext *vkctx = &s->vkctx;
+    FFVulkanFunctions *vk = &vkctx->vkfn;
 
     ff_vk_exec_pool_free(vkctx, &s->e);
     ff_vk_shader_free(vkctx, &s->shd_hor);
     ff_vk_shader_free(vkctx, &s->shd_ver);
     ff_vk_free_buf(vkctx, &s->params_hor);
     ff_vk_free_buf(vkctx, &s->params_ver);
+
+    if (s->sampler)
+        vk->DestroySampler(vkctx->hwctx->act_dev, s->sampler,
+                           vkctx->hwctx->alloc);
 
     ff_vk_uninit(&s->vkctx);
 
@@ -286,16 +291,16 @@ static const AVFilterPad gblur_vulkan_outputs[] = {
     }
 };
 
-const FFFilter ff_vf_gblur_vulkan = {
-    .p.name         = "gblur_vulkan",
-    .p.description  = NULL_IF_CONFIG_SMALL("Gaussian Blur in Vulkan"),
-    .p.priv_class   = &gblur_vulkan_class,
-    .p.flags        = AVFILTER_FLAG_HWDEVICE,
+const AVFilter ff_vf_gblur_vulkan = {
+    .name           = "gblur_vulkan",
+    .description    = NULL_IF_CONFIG_SMALL("Gaussian Blur in Vulkan"),
     .priv_size      = sizeof(GBlurVulkanContext),
     .init           = &ff_vk_filter_init,
     .uninit         = &gblur_vulkan_uninit,
     FILTER_INPUTS(gblur_vulkan_inputs),
     FILTER_OUTPUTS(gblur_vulkan_outputs),
     FILTER_SINGLE_PIXFMT(AV_PIX_FMT_VULKAN),
+    .priv_class     = &gblur_vulkan_class,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
+    .flags          = AVFILTER_FLAG_HWDEVICE,
 };

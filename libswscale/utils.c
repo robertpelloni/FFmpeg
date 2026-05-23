@@ -41,7 +41,6 @@
 #include "libavutil/attributes.h"
 #include "libavutil/avassert.h"
 #include "libavutil/cpu.h"
-#include "libavutil/csp.h"
 #include "libavutil/emms.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/intreadwrite.h"
@@ -62,6 +61,7 @@
 #include "rgb2rgb.h"
 #include "swscale.h"
 #include "swscale_internal.h"
+#include "utils.h"
 #include "graph.h"
 
 #if CONFIG_VULKAN
@@ -149,6 +149,24 @@ int ff_shuffle_filter_coefficients(SwsInternal *c, int *filterPos,
     }
 #endif
     return 0;
+}
+
+int sws_isSupportedInput(enum AVPixelFormat pix_fmt)
+{
+    return (unsigned)pix_fmt < FF_ARRAY_ELEMS(format_entries) ?
+           format_entries[pix_fmt].is_supported_in : 0;
+}
+
+int sws_isSupportedOutput(enum AVPixelFormat pix_fmt)
+{
+    return (unsigned)pix_fmt < FF_ARRAY_ELEMS(format_entries) ?
+           format_entries[pix_fmt].is_supported_out : 0;
+}
+
+int sws_isSupportedEndiannessConversion(enum AVPixelFormat pix_fmt)
+{
+    return (unsigned)pix_fmt < FF_ARRAY_ELEMS(format_entries) ?
+           format_entries[pix_fmt].is_supported_endianness : 0;
 }
 
 static double getSplineCoeff(double a, double b, double c, double d,
@@ -827,7 +845,7 @@ static int handle_xyz(/* enum AVPixelFormat */ int *format)
     }
 }
 
-static int handle_formats(SwsContext *sws)
+static void handle_formats(SwsContext *sws)
 {
     SwsInternal *c = sws_internal(sws);
     c->src0Alpha |= handle_0alpha(&sws->src_format);
@@ -852,7 +870,7 @@ int sws_setColorspaceDetails(SwsContext *sws, const int inv_table[4],
     SwsInternal *c = sws_internal(sws);
     const AVPixFmtDescriptor *desc_dst;
     const AVPixFmtDescriptor *desc_src;
-    int ret, need_reinit = 0;
+    int need_reinit = 0;
 
     if (c->nb_slice_ctx) {
         int parent_ret = 0;
@@ -867,9 +885,7 @@ int sws_setColorspaceDetails(SwsContext *sws, const int inv_table[4],
         return parent_ret;
     }
 
-    ret = handle_formats(sws);
-    if (ret < 0)
-        return ret;
+    handle_formats(sws);
     desc_dst = av_pix_fmt_desc_get(sws->dst_format);
     desc_src = av_pix_fmt_desc_get(sws->src_format);
 
@@ -1165,9 +1181,7 @@ av_cold int ff_sws_init_single_context(SwsContext *sws, SwsFilter *srcFilter,
                                  ff_yuv2rgb_coeffs[SWS_CS_DEFAULT],
                                  sws->dst_range, 0, 1 << 16, 1 << 16);
 
-    ret = handle_formats(sws);
-    if (ret < 0)
-        return ret;
+    handle_formats(sws);
     srcFormat = sws->src_format;
     dstFormat = sws->dst_format;
     desc_src = av_pix_fmt_desc_get(srcFormat);
@@ -1382,8 +1396,6 @@ av_cold int ff_sws_init_single_context(SwsContext *sws, SwsFilter *srcFilter,
         srcFormat != AV_PIX_FMT_GBRAP16BE  && srcFormat != AV_PIX_FMT_GBRAP16LE &&
         srcFormat != AV_PIX_FMT_GBRPF32BE  && srcFormat != AV_PIX_FMT_GBRPF32LE &&
         srcFormat != AV_PIX_FMT_GBRAPF32BE && srcFormat != AV_PIX_FMT_GBRAPF32LE &&
-        srcFormat != AV_PIX_FMT_GBRPF16BE  && srcFormat != AV_PIX_FMT_GBRPF16LE &&
-        srcFormat != AV_PIX_FMT_GBRAPF16BE && srcFormat != AV_PIX_FMT_GBRAPF16LE &&
         ((dstW >> c->chrDstHSubSample) <= (srcW >> 1) ||
          (flags & SWS_FAST_BILINEAR)))
         c->chrSrcHSubSample = 1;
@@ -2487,4 +2499,148 @@ int ff_range_add(RangeList *rl, unsigned int start, unsigned int len)
     }
 
     return 0;
+}
+
+/**
+ * This function also sanitizes and strips the input data, removing irrelevant
+ * fields for certain formats.
+ */
+SwsFormat ff_fmt_from_frame(const AVFrame *frame, int field)
+{
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(frame->format);
+    SwsFormat fmt = {
+        .width  = frame->width,
+        .height = frame->height,
+        .format = frame->format,
+        .range  = frame->color_range,
+        .prim   = frame->color_primaries,
+        .trc    = frame->color_trc,
+        .csp    = frame->colorspace,
+        .loc    = frame->chroma_location,
+        .desc   = desc,
+    };
+
+    av_assert1(fmt.width > 0);
+    av_assert1(fmt.height > 0);
+    av_assert1(fmt.format != AV_PIX_FMT_NONE);
+    av_assert0(desc);
+    if (desc->flags & (AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_PAL | AV_PIX_FMT_FLAG_BAYER)) {
+        /* RGB-like family */
+        fmt.csp   = AVCOL_SPC_RGB;
+        fmt.range = AVCOL_RANGE_JPEG;
+    } else if (desc->flags & AV_PIX_FMT_FLAG_XYZ) {
+        fmt.csp   = AVCOL_SPC_UNSPECIFIED;
+        fmt.prim  = AVCOL_PRI_SMPTE428;
+        fmt.trc   = AVCOL_TRC_SMPTE428;
+    } else if (desc->nb_components < 3) {
+        /* Grayscale formats */
+        fmt.prim  = AVCOL_PRI_UNSPECIFIED;
+        fmt.csp   = AVCOL_SPC_UNSPECIFIED;
+        if (desc->flags & AV_PIX_FMT_FLAG_FLOAT)
+            fmt.range = AVCOL_RANGE_UNSPECIFIED;
+        else
+            fmt.range = AVCOL_RANGE_JPEG; // FIXME: this restriction should be lifted
+    }
+
+    switch (frame->format) {
+    case AV_PIX_FMT_YUVJ420P:
+    case AV_PIX_FMT_YUVJ411P:
+    case AV_PIX_FMT_YUVJ422P:
+    case AV_PIX_FMT_YUVJ444P:
+    case AV_PIX_FMT_YUVJ440P:
+        fmt.range = AVCOL_RANGE_JPEG;
+        break;
+    }
+
+    if (!desc->log2_chroma_w && !desc->log2_chroma_h)
+        fmt.loc = AVCHROMA_LOC_UNSPECIFIED;
+
+    if (frame->flags & AV_FRAME_FLAG_INTERLACED) {
+        fmt.height = (fmt.height + (field == FIELD_TOP)) >> 1;
+        fmt.interlaced = 1;
+    }
+
+    return fmt;
+}
+
+int sws_test_format(enum AVPixelFormat format, int output)
+{
+    return output ? sws_isSupportedOutput(format) : sws_isSupportedInput(format);
+}
+
+int sws_test_colorspace(enum AVColorSpace csp, int output)
+{
+    switch (csp) {
+    case AVCOL_SPC_UNSPECIFIED:
+    case AVCOL_SPC_RGB:
+    case AVCOL_SPC_BT709:
+    case AVCOL_SPC_BT470BG:
+    case AVCOL_SPC_SMPTE170M:
+    case AVCOL_SPC_FCC:
+    case AVCOL_SPC_SMPTE240M:
+    case AVCOL_SPC_BT2020_NCL:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+int sws_test_primaries(enum AVColorPrimaries prim, int output)
+{
+    return prim > AVCOL_PRI_RESERVED0 && prim < AVCOL_PRI_NB &&
+           prim != AVCOL_PRI_RESERVED;
+}
+
+int sws_test_transfer(enum AVColorTransferCharacteristic trc, int output)
+{
+    return trc > AVCOL_TRC_RESERVED0 && trc < AVCOL_TRC_NB &&
+           trc != AVCOL_TRC_RESERVED;
+}
+
+static int test_range(enum AVColorRange range)
+{
+    return range >= 0 && range < AVCOL_RANGE_NB;
+}
+
+static int test_loc(enum AVChromaLocation loc)
+{
+    return loc >= 0 && loc < AVCHROMA_LOC_NB;
+}
+
+int ff_test_fmt(const SwsFormat *fmt, int output)
+{
+    return fmt->width > 0 && fmt->height > 0        &&
+           sws_test_format    (fmt->format, output) &&
+           sws_test_colorspace(fmt->csp,    output) &&
+           sws_test_primaries (fmt->prim,   output) &&
+           sws_test_transfer  (fmt->trc,    output) &&
+           test_range         (fmt->range)          &&
+           test_loc           (fmt->loc);
+}
+
+int sws_test_frame(const AVFrame *frame, int output)
+{
+    for (int field = 0; field < 2; field++) {
+        const SwsFormat fmt = ff_fmt_from_frame(frame, field);
+        if (!ff_test_fmt(&fmt, output))
+            return 0;
+        if (!fmt.interlaced)
+            break;
+    }
+
+    return 1;
+}
+
+int sws_is_noop(const AVFrame *dst, const AVFrame *src)
+{
+    for (int field = 0; field < 2; field++) {
+        SwsFormat dst_fmt = ff_fmt_from_frame(dst, field);
+        SwsFormat src_fmt = ff_fmt_from_frame(src, field);
+        if (!ff_fmt_equal(&dst_fmt, &src_fmt))
+            return 0;
+        if (!dst_fmt.interlaced)
+            break;
+    }
+
+    return 1;
 }

@@ -34,7 +34,6 @@
 #include "libavutil/ppc/util_altivec.h"
 
 #include "libavcodec/mpegvideo.h"
-#include "libavcodec/mpegvideo_unquantize.h"
 
 #if HAVE_ALTIVEC
 
@@ -99,7 +98,7 @@ static void dct_unquantize_h263_inter_altivec(const MPVContext *s,
 }
 #endif /* HAVE_ALTIVEC */
 
-av_cold void ff_mpv_unquantize_init_ppc(MPVUnquantDSPContext *s, int bitexact)
+av_cold void ff_mpv_common_init_ppc(MpegEncContext *s)
 {
 #if HAVE_ALTIVEC
     if (!PPC_ALTIVEC(av_get_cpu_flags()))

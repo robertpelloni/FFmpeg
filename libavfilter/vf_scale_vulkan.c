@@ -51,17 +51,13 @@ typedef struct ScaleVulkanContext {
 
     int initialized;
     FFVkExecPool e;
-    AVVulkanDeviceQueueFamily *qf;
+    FFVkQueueFamilyCtx qf;
     FFVulkanShader shd;
     VkSampler sampler;
 
     /* Push constants / options */
     struct {
         float yuv_matrix[4][4];
-        int crop_x;
-        int crop_y;
-        int crop_w;
-        int crop_h;
     } opts;
 
     char *out_format_string;
@@ -147,8 +143,8 @@ static int init_scale_shader(AVFilterContext *ctx, FFVulkanShader *shd,
     GLSLC(1,     ivec2 size;                                                 );
     GLSLC(1,     ivec2 pos = ivec2(gl_GlobalInvocationID.xy);                );
     GLSLF(1,     vec2 in_d = vec2(%i, %i);             ,in->width, in->height);
-    GLSLC(1,     vec2 c_r = vec2(crop_w, crop_h) / in_d;                     );
-    GLSLC(1,     vec2 c_o = vec2(crop_x, crop_y) / in_d;                     );
+    GLSLF(1,     vec2 c_r = vec2(%i, %i) / in_d;              ,crop_w, crop_h);
+    GLSLF(1,     vec2 c_o = vec2(%i, %i) / in_d;               ,crop_x,crop_y);
     GLSLC(0,                                                                 );
 
     if (s->vkctx.output_format == s->vkctx.input_format) {
@@ -363,11 +359,6 @@ static int scale_vulkan_filter_frame(AVFilterLink *link, AVFrame *in)
     if (err < 0)
         goto fail;
 
-    if (out->width != in->width || out->height != in->height) {
-        av_frame_side_data_remove_by_props(&out->side_data, &out->nb_side_data,
-                                           AV_SIDE_DATA_PROP_SIZE_DEPENDENT);
-    }
-
     if (s->out_range != AVCOL_RANGE_UNSPECIFIED)
         out->color_range = s->out_range;
     if (s->vkctx.output_format != s->vkctx.input_format)
@@ -534,16 +525,16 @@ static const AVFilterPad scale_vulkan_outputs[] = {
     },
 };
 
-const FFFilter ff_vf_scale_vulkan = {
-    .p.name         = "scale_vulkan",
-    .p.description  = NULL_IF_CONFIG_SMALL("Scale Vulkan frames"),
-    .p.priv_class   = &scale_vulkan_class,
-    .p.flags        = AVFILTER_FLAG_HWDEVICE,
+const AVFilter ff_vf_scale_vulkan = {
+    .name           = "scale_vulkan",
+    .description    = NULL_IF_CONFIG_SMALL("Scale Vulkan frames"),
     .priv_size      = sizeof(ScaleVulkanContext),
     .init           = &ff_vk_filter_init,
     .uninit         = &scale_vulkan_uninit,
     FILTER_INPUTS(scale_vulkan_inputs),
     FILTER_OUTPUTS(scale_vulkan_outputs),
     FILTER_SINGLE_PIXFMT(AV_PIX_FMT_VULKAN),
+    .priv_class     = &scale_vulkan_class,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
+    .flags          = AVFILTER_FLAG_HWDEVICE,
 };

@@ -56,14 +56,6 @@ layout(buffer_reference, buffer_reference_align = 1) buffer u8buf {
     uint8_t v;
 };
 
-layout(buffer_reference, buffer_reference_align = 1) buffer u8vec2buf {
-    u8vec2 v;
-};
-
-layout(buffer_reference, buffer_reference_align = 1) buffer u8vec4buf {
-    u8vec4 v;
-};
-
 layout(buffer_reference, buffer_reference_align = 2) buffer u16buf {
     uint16_t v;
 };

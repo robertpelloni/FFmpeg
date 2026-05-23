@@ -159,14 +159,10 @@ static void libdav1d_init_params(AVCodecContext *c, const Dav1dSequenceHeader *s
                                     (unsigned)seq->num_units_in_tick,
                                     (unsigned)seq->time_scale);
 
-#if FF_API_CODEC_PROPS
-FF_DISABLE_DEPRECATION_WARNINGS
    if (seq->film_grain_present)
        c->properties |= FF_CODEC_PROPERTY_FILM_GRAIN;
    else
        c->properties &= ~FF_CODEC_PROPERTY_FILM_GRAIN;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
 }
 
 static av_cold int libdav1d_parse_extradata(AVCodecContext *c)
@@ -351,10 +347,9 @@ static int libdav1d_receive_frame_internal(AVCodecContext *c, Dav1dPicture *p)
 
     res = dav1d_get_picture(dav1d->c, p);
     if (res < 0) {
-        if (res == AVERROR(EINVAL)) {
-            dav1d_data_unref(data);
+        if (res == AVERROR(EINVAL))
             res = AVERROR_INVALIDDATA;
-        } else if (res == AVERROR(EAGAIN))
+        else if (res == AVERROR(EAGAIN))
             res = c->internal->draining ? AVERROR_EOF : 1;
     }
 

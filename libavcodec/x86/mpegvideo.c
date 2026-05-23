@@ -26,7 +26,6 @@
 #include "libavutil/x86/cpu.h"
 #include "libavcodec/mpegvideo.h"
 #include "libavcodec/mpegvideodata.h"
-#include "libavcodec/mpegvideo_unquantize.h"
 
 #if HAVE_SSE2_INLINE
 
@@ -373,7 +372,7 @@ __asm__ volatile(
 #endif /* HAVE_SSSE3_INLINE */
 #endif /* HAVE_SSE2_INLINE */
 
-av_cold void ff_mpv_unquantize_init_x86(MPVUnquantDSPContext *s, int bitexact)
+av_cold void ff_mpv_common_init_x86(MpegEncContext *s)
 {
 #if HAVE_SSE2_INLINE
     int cpu_flags = av_get_cpu_flags();

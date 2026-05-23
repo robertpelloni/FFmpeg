@@ -34,7 +34,7 @@ typedef struct ProresDSPContext {
                            const uint16_t *lin_curve);
 } ProresDSPContext;
 
-void ff_proresdsp_init(ProresDSPContext *dsp, int bits_per_raw_sample);
+int ff_proresdsp_init(ProresDSPContext *dsp, int bits_per_raw_sample);
 
 void ff_proresdsp_init_x86(ProresDSPContext *dsp, int bits_per_raw_sample);
 

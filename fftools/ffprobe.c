@@ -70,6 +70,17 @@
 
 #include "libavutil/thread.h"
 
+#if !HAVE_THREADS
+#  ifdef pthread_mutex_lock
+#    undef pthread_mutex_lock
+#  endif
+#  define pthread_mutex_lock(a) do{}while(0)
+#  ifdef pthread_mutex_unlock
+#    undef pthread_mutex_unlock
+#  endif
+#  define pthread_mutex_unlock(a) do{}while(0)
+#endif
+
 // attached as opaque_ref to packets/frames
 typedef struct FrameData {
     int64_t pkt_pos;
@@ -92,7 +103,6 @@ typedef struct InputFile {
 const char program_name[] = "ffprobe";
 const int program_birth_year = 2007;
 
-static int do_analyze_frames = 0;
 static int do_bitexact = 0;
 static int do_count_frames = 0;
 static int do_count_packets = 0;
@@ -353,11 +363,10 @@ static unsigned int nb_streams;
 static uint64_t *nb_streams_packets;
 static uint64_t *nb_streams_frames;
 static int *selected_streams;
-static int *streams_with_closed_captions;
-static int *streams_with_film_grain;
 
-static AVMutex log_mutex = AV_MUTEX_INITIALIZER;
-
+#if HAVE_THREADS
+pthread_mutex_t log_mutex;
+#endif
 typedef struct LogBuffer {
     char *context_name;
     int log_level;
@@ -392,7 +401,7 @@ static void log_callback(void *ptr, int level, const char *fmt, va_list vl)
     va_end(vl2);
 
 #if HAVE_THREADS
-    ff_mutex_lock(&log_mutex);
+    pthread_mutex_lock(&log_mutex);
 
     new_log_buffer = av_realloc_array(log_buffer, log_buffer_size + 1, sizeof(*log_buffer));
     if (new_log_buffer) {
@@ -423,7 +432,7 @@ static void log_callback(void *ptr, int level, const char *fmt, va_list vl)
         log_buffer_size ++;
     }
 
-    ff_mutex_unlock(&log_mutex);
+    pthread_mutex_unlock(&log_mutex);
 #endif
 }
 
@@ -1276,7 +1285,7 @@ static void clear_log(int need_lock)
     int i;
 
     if (need_lock)
-        ff_mutex_lock(&log_mutex);
+        pthread_mutex_lock(&log_mutex);
     for (i=0; i<log_buffer_size; i++) {
         av_freep(&log_buffer[i].context_name);
         av_freep(&log_buffer[i].parent_name);
@@ -1284,15 +1293,15 @@ static void clear_log(int need_lock)
     }
     log_buffer_size = 0;
     if(need_lock)
-        ff_mutex_unlock(&log_mutex);
+        pthread_mutex_unlock(&log_mutex);
 }
 
 static int show_log(AVTextFormatContext *tfc, int section_ids, int section_id, int log_level)
 {
     int i;
-    ff_mutex_lock(&log_mutex);
+    pthread_mutex_lock(&log_mutex);
     if (!log_buffer_size) {
-        ff_mutex_unlock(&log_mutex);
+        pthread_mutex_unlock(&log_mutex);
         return 0;
     }
     avtext_print_section_header(tfc, NULL, section_ids);
@@ -1315,7 +1324,7 @@ static int show_log(AVTextFormatContext *tfc, int section_ids, int section_id, i
         }
     }
     clear_log(0);
-    ff_mutex_unlock(&log_mutex);
+    pthread_mutex_unlock(&log_mutex);
 
     avtext_print_section_footer(tfc);
 
@@ -1528,7 +1537,6 @@ static void show_frame(AVTextFormatContext *tfc, AVFrame *frame, AVStream *strea
         print_fmt("pict_type",              "%c", av_get_picture_type_char(frame->pict_type));
         print_int("interlaced_frame",       !!(frame->flags & AV_FRAME_FLAG_INTERLACED));
         print_int("top_field_first",        !!(frame->flags & AV_FRAME_FLAG_TOP_FIELD_FIRST));
-        print_int("lossless",               !!(frame->flags & AV_FRAME_FLAG_LOSSLESS));
         print_int("repeat_pict",            frame->repeat_pict);
 
         print_color_range(tfc, frame->color_range);
@@ -1714,8 +1722,6 @@ static int read_interval_packets(AVTextFormatContext *tfc, InputFile *ifile,
             REALLOCZ_ARRAY_STREAM(nb_streams_frames,  nb_streams, fmt_ctx->nb_streams);
             REALLOCZ_ARRAY_STREAM(nb_streams_packets, nb_streams, fmt_ctx->nb_streams);
             REALLOCZ_ARRAY_STREAM(selected_streams,   nb_streams, fmt_ctx->nb_streams);
-            REALLOCZ_ARRAY_STREAM(streams_with_closed_captions,   nb_streams, fmt_ctx->nb_streams);
-            REALLOCZ_ARRAY_STREAM(streams_with_film_grain,        nb_streams, fmt_ctx->nb_streams);
             nb_streams = fmt_ctx->nb_streams;
         }
         if (selected_streams[pkt->stream_index]) {
@@ -1917,11 +1923,8 @@ static int show_stream(AVTextFormatContext *tfc, AVFormatContext *fmt_ctx, int s
         if (dec_ctx) {
             print_int("coded_width",  dec_ctx->coded_width);
             print_int("coded_height", dec_ctx->coded_height);
-
-            if (do_analyze_frames) {
-                print_int("closed_captions", streams_with_closed_captions[stream->index]);
-                print_int("film_grain",      streams_with_film_grain[stream->index]);
-            }
+            print_int("closed_captions", !!(dec_ctx->properties & FF_CODEC_PROPERTY_CLOSED_CAPTIONS));
+            print_int("film_grain", !!(dec_ctx->properties & FF_CODEC_PROPERTY_FILM_GRAIN));
         }
         print_int("has_b_frames", par->video_delay);
         sar = av_guess_sample_aspect_ratio(fmt_ctx, stream, NULL);
@@ -2666,8 +2669,7 @@ static int probe_file(AVTextFormatContext *tfc, const char *filename,
     int ret;
     int section_id;
 
-    do_analyze_frames = do_analyze_frames && do_show_streams;
-    do_read_frames = do_show_frames || do_count_frames || do_analyze_frames;
+    do_read_frames = do_show_frames || do_count_frames;
     do_read_packets = do_show_packets || do_count_packets;
 
     ret = open_input_file(&ifile, filename, print_filename);
@@ -2680,8 +2682,6 @@ static int probe_file(AVTextFormatContext *tfc, const char *filename,
     REALLOCZ_ARRAY_STREAM(nb_streams_frames,0,ifile.fmt_ctx->nb_streams);
     REALLOCZ_ARRAY_STREAM(nb_streams_packets,0,ifile.fmt_ctx->nb_streams);
     REALLOCZ_ARRAY_STREAM(selected_streams,0,ifile.fmt_ctx->nb_streams);
-    REALLOCZ_ARRAY_STREAM(streams_with_closed_captions,0,ifile.fmt_ctx->nb_streams);
-    REALLOCZ_ARRAY_STREAM(streams_with_film_grain,0,ifile.fmt_ctx->nb_streams);
 
     for (unsigned i = 0; i < ifile.fmt_ctx->nb_streams; i++) {
         if (stream_specifier) {
@@ -3303,7 +3303,6 @@ static const OptionDef real_options[] = {
     { "show_optional_fields",  OPT_TYPE_FUNC, OPT_FUNC_ARG, { .func_arg = &opt_show_optional_fields }, "show optional fields" },
     { "show_private_data",     OPT_TYPE_BOOL,        0, { &show_private_data }, "show private data" },
     { "private",               OPT_TYPE_BOOL,        0, { &show_private_data }, "same as show_private_data" },
-    { "analyze_frames",        OPT_TYPE_BOOL,        0, { &do_analyze_frames }, "analyze frames to provide additional stream-level information" },
     { "bitexact",              OPT_TYPE_BOOL,        0, {&do_bitexact}, "force bitexact output" },
     { "read_intervals",        OPT_TYPE_FUNC, OPT_FUNC_ARG, {.func_arg = opt_read_intervals}, "set read intervals", "read_intervals" },
     { "i",                     OPT_TYPE_FUNC, OPT_FUNC_ARG, {.func_arg = opt_input_file_i}, "read specified file", "input_file"},
@@ -3511,6 +3510,10 @@ end:
         av_dict_free(&selected_entries[i].entries_to_show);
 
     avformat_network_deinit();
+
+#if HAVE_THREADS
+    pthread_mutex_destroy(&log_mutex);
+#endif
 
     return ret < 0;
 }

@@ -20,20 +20,17 @@
  */
 
 #include <stdint.h>
-#include <time.h>
 
 #include "config.h"
 
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
-#include "libavutil/dict.h"
 #include "libavutil/internal.h"
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
 #include "libavutil/time.h"
-#include "libavutil/time_internal.h"
 
 #include "libavcodec/internal.h"
 

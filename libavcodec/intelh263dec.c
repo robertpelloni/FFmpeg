@@ -118,6 +118,7 @@ int ff_intel_h263_decode_picture_header(H263DecContext *const h)
     /* PEI */
     if (skip_1stop_8data_bits(&h->gb) < 0)
         return AVERROR_INVALIDDATA;
+    s->f_code = 1;
 
     h->gob_index = H263_GOB_HEIGHT(h->c.height);
 

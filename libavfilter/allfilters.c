@@ -20,7 +20,6 @@
  */
 
 #include "avfilter.h"
-#include "filters.h"
 
 extern const FFFilter ff_af_aap;
 extern const FFFilter ff_af_abench;
@@ -164,18 +163,18 @@ extern const FFFilter ff_af_volume;
 extern const FFFilter ff_af_volumedetect;
 extern const FFFilter ff_af_whisper;
 
-extern const FFFilter ff_asrc_aevalsrc;
-extern const FFFilter ff_asrc_afdelaysrc;
-extern const FFFilter ff_asrc_afireqsrc;
-extern const FFFilter ff_asrc_afirsrc;
-extern const FFFilter ff_asrc_anoisesrc;
-extern const FFFilter ff_asrc_anullsrc;
-extern const FFFilter ff_asrc_flite;
-extern const FFFilter ff_asrc_hilbert;
-extern const FFFilter ff_asrc_sinc;
-extern const FFFilter ff_asrc_sine;
+extern const AVFilter ff_asrc_aevalsrc;
+extern const AVFilter ff_asrc_afdelaysrc;
+extern const AVFilter ff_asrc_afireqsrc;
+extern const AVFilter ff_asrc_afirsrc;
+extern const AVFilter ff_asrc_anoisesrc;
+extern const AVFilter ff_asrc_anullsrc;
+extern const AVFilter ff_asrc_flite;
+extern const AVFilter ff_asrc_hilbert;
+extern const AVFilter ff_asrc_sinc;
+extern const AVFilter ff_asrc_sine;
 
-extern const FFFilter ff_asink_anullsink;
+extern const AVFilter ff_asink_anullsink;
 
 extern const FFFilter ff_vf_addroi;
 extern const FFFilter ff_vf_alphaextract;
@@ -611,41 +610,41 @@ extern const FFFilter ff_vsrc_testsrc2;
 extern const FFFilter ff_vsrc_yuvtestsrc;
 extern const FFFilter ff_vsrc_zoneplate;
 
-extern const FFFilter ff_vsink_nullsink;
+extern const AVFilter ff_vsink_nullsink;
 
 /* multimedia filters */
-extern const FFFilter ff_avf_a3dscope;
-extern const FFFilter ff_avf_abitscope;
-extern const FFFilter ff_avf_adrawgraph;
-extern const FFFilter ff_avf_agraphmonitor;
-extern const FFFilter ff_avf_ahistogram;
-extern const FFFilter ff_avf_aphasemeter;
-extern const FFFilter ff_avf_avectorscope;
-extern const FFFilter ff_avf_concat;
-extern const FFFilter ff_avf_showcqt;
-extern const FFFilter ff_avf_showcwt;
-extern const FFFilter ff_avf_showfreqs;
-extern const FFFilter ff_avf_showspatial;
-extern const FFFilter ff_avf_showspectrum;
-extern const FFFilter ff_avf_showspectrumpic;
-extern const FFFilter ff_avf_showvolume;
-extern const FFFilter ff_avf_showwaves;
-extern const FFFilter ff_avf_showwavespic;
-extern const FFFilter ff_vaf_spectrumsynth;
+extern const AVFilter ff_avf_a3dscope;
+extern const AVFilter ff_avf_abitscope;
+extern const AVFilter ff_avf_adrawgraph;
+extern const AVFilter ff_avf_agraphmonitor;
+extern const AVFilter ff_avf_ahistogram;
+extern const AVFilter ff_avf_aphasemeter;
+extern const AVFilter ff_avf_avectorscope;
+extern const AVFilter ff_avf_concat;
+extern const AVFilter ff_avf_showcqt;
+extern const AVFilter ff_avf_showcwt;
+extern const AVFilter ff_avf_showfreqs;
+extern const AVFilter ff_avf_showspatial;
+extern const AVFilter ff_avf_showspectrum;
+extern const AVFilter ff_avf_showspectrumpic;
+extern const AVFilter ff_avf_showvolume;
+extern const AVFilter ff_avf_showwaves;
+extern const AVFilter ff_avf_showwavespic;
+extern const AVFilter ff_vaf_spectrumsynth;
 
 /* multimedia sources */
-extern const FFFilter ff_avsrc_avsynctest;
-extern const FFFilter ff_avsrc_amovie;
-extern const FFFilter ff_avsrc_movie;
+extern const AVFilter ff_avsrc_avsynctest;
+extern const AVFilter ff_avsrc_amovie;
+extern const AVFilter ff_avsrc_movie;
 
 /* those filters are part of public or internal API,
  * they are formatted to not be found by the grep
  * as they are manually added again (due to their 'names'
  * being the same while having different 'types'). */
-extern  const FFFilter ff_asrc_abuffer;
-extern  const FFFilter ff_vsrc_buffer;
-extern  const FFFilter ff_asink_abuffer;
-extern  const FFFilter ff_vsink_buffer;
+extern  const AVFilter ff_asrc_abuffer;
+extern  const AVFilter ff_vsrc_buffer;
+extern  const AVFilter ff_asink_abuffer;
+extern  const AVFilter ff_vsink_buffer;
 
 #include "libavfilter/filter_list.c"
 
@@ -653,14 +652,12 @@ extern  const FFFilter ff_vsink_buffer;
 const AVFilter *av_filter_iterate(void **opaque)
 {
     uintptr_t i = (uintptr_t)*opaque;
-    const FFFilter *f = filter_list[i];
+    const AVFilter *f = filter_list[i];
 
-    if (f) {
+    if (f)
         *opaque = (void*)(i + 1);
-        return &f->p;
-    }
 
-    return NULL;
+    return f;
 }
 
 const AVFilter *avfilter_get_by_name(const char *name)

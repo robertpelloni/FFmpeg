@@ -18,6 +18,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/crc.h"
 #include "libavutil/mem.h"
 #include "libavutil/vulkan.h"
 
@@ -30,7 +31,6 @@
 
 #include "ffv1.h"
 #include "ffv1enc.h"
-#include "ffv1_vulkan.h"
 
 /* Parallel Golomb alignment */
 #define LG_ALIGN_W 32
@@ -58,10 +58,10 @@ typedef struct VulkanEncodeFFv1Context {
     AVFrame *frame;
 
     FFVulkanContext s;
-    AVVulkanDeviceQueueFamily *qf;
+    FFVkQueueFamilyCtx qf;
     FFVkExecPool exec_pool;
 
-    AVVulkanDeviceQueueFamily *transfer_qf;
+    FFVkQueueFamilyCtx transfer_qf;
     FFVkExecPool transfer_exec_pool;
 
     VkBufferCopy *buf_regions;
@@ -1130,6 +1130,110 @@ fail:
     return err;
 }
 
+static int init_state_transition_data(AVCodecContext *avctx)
+{
+    int err;
+    VulkanEncodeFFv1Context *fv = avctx->priv_data;
+
+    uint8_t *buf_mapped;
+    size_t buf_len = 512*sizeof(uint8_t);
+
+    RET(ff_vk_create_buf(&fv->s, &fv->rangecoder_static_buf,
+                         buf_len,
+                         NULL, NULL,
+                         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT));
+    RET(ff_vk_map_buffer(&fv->s, &fv->rangecoder_static_buf,
+                         &buf_mapped, 0));
+
+    for (int i = 1; i < 256; i++) {
+        buf_mapped[256 + i] = fv->ctx.state_transition[i];
+        buf_mapped[256 - i] = 256 - (int)fv->ctx.state_transition[i];
+    }
+
+    RET(ff_vk_unmap_buffer(&fv->s, &fv->rangecoder_static_buf, 1));
+
+    /* Update descriptors */
+    RET(ff_vk_shader_update_desc_buffer(&fv->s, &fv->exec_pool.contexts[0],
+                                        &fv->setup, 0, 0, 0,
+                                        &fv->rangecoder_static_buf,
+                                        0, fv->rangecoder_static_buf.size,
+                                        VK_FORMAT_UNDEFINED));
+    RET(ff_vk_shader_update_desc_buffer(&fv->s, &fv->exec_pool.contexts[0],
+                                        &fv->enc, 0, 0, 0,
+                                        &fv->rangecoder_static_buf,
+                                        0, fv->rangecoder_static_buf.size,
+                                        VK_FORMAT_UNDEFINED));
+
+fail:
+    return err;
+}
+
+static int init_quant_table_data(AVCodecContext *avctx)
+{
+    int err;
+    VulkanEncodeFFv1Context *fv = avctx->priv_data;
+
+    int16_t *buf_mapped;
+    size_t buf_len = MAX_QUANT_TABLES*
+                     MAX_CONTEXT_INPUTS*
+                     MAX_QUANT_TABLE_SIZE*sizeof(int16_t);
+
+    RET(ff_vk_create_buf(&fv->s, &fv->quant_buf,
+                         buf_len,
+                         NULL, NULL,
+                         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT));
+    RET(ff_vk_map_buffer(&fv->s, &fv->quant_buf, (void *)&buf_mapped, 0));
+
+    memcpy(buf_mapped, fv->ctx.quant_tables,
+           sizeof(fv->ctx.quant_tables));
+
+    RET(ff_vk_unmap_buffer(&fv->s, &fv->quant_buf, 1));
+    RET(ff_vk_shader_update_desc_buffer(&fv->s, &fv->exec_pool.contexts[0],
+                                        &fv->enc, 0, 1, 0,
+                                        &fv->quant_buf,
+                                        0, fv->quant_buf.size,
+                                        VK_FORMAT_UNDEFINED));
+
+fail:
+    return err;
+}
+
+static int init_crc_table_data(AVCodecContext *avctx)
+{
+    int err;
+    VulkanEncodeFFv1Context *fv = avctx->priv_data;
+
+    uint32_t *buf_mapped;
+    size_t buf_len = 256*sizeof(int32_t);
+
+    RET(ff_vk_create_buf(&fv->s, &fv->crc_tab_buf,
+                         buf_len,
+                         NULL, NULL,
+                         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT));
+    RET(ff_vk_map_buffer(&fv->s, &fv->crc_tab_buf, (void *)&buf_mapped, 0));
+
+    memcpy(buf_mapped, av_crc_get_table(AV_CRC_32_IEEE), buf_len);
+
+    RET(ff_vk_unmap_buffer(&fv->s, &fv->crc_tab_buf, 1));
+    RET(ff_vk_shader_update_desc_buffer(&fv->s, &fv->exec_pool.contexts[0],
+                                        &fv->enc, 0, 2, 0,
+                                        &fv->crc_tab_buf,
+                                        0, fv->crc_tab_buf.size,
+                                        VK_FORMAT_UNDEFINED));
+
+fail:
+    return err;
+}
+
 static av_cold int vulkan_encode_ffv1_init(AVCodecContext *avctx)
 {
     int err;
@@ -1137,7 +1241,7 @@ static av_cold int vulkan_encode_ffv1_init(AVCodecContext *avctx)
     VulkanEncodeFFv1Context *fv = avctx->priv_data;
     FFV1Context *f = &fv->ctx;
 
-    if ((err = ff_ffv1_common_init(avctx, f)) < 0)
+    if ((err = ff_ffv1_common_init(avctx)) < 0)
         return err;
 
     if (f->ac == 1)
@@ -1223,7 +1327,7 @@ static av_cold int vulkan_encode_ffv1_init(AVCodecContext *avctx)
         if (f->version < 4) {
             av_log(avctx, AV_LOG_ERROR, "PCM coding only supported by version 4 (-level 4)\n");
             return AVERROR_INVALIDDATA;
-        } else if (f->ac == AC_GOLOMB_RICE) {
+        } else if (f->ac != AC_RANGE_CUSTOM_TAB) {
             av_log(avctx, AV_LOG_ERROR, "PCM coding requires range coding\n");
             return AVERROR_INVALIDDATA;
         }
@@ -1234,8 +1338,8 @@ static av_cold int vulkan_encode_ffv1_init(AVCodecContext *avctx)
     if (err < 0)
         return err;
 
-    fv->qf = ff_vk_qf_find(&fv->s, VK_QUEUE_COMPUTE_BIT, 0);
-    if (!fv->qf) {
+    err = ff_vk_qf_init(&fv->s, &fv->qf, VK_QUEUE_COMPUTE_BIT);
+    if (err < 0) {
         av_log(avctx, AV_LOG_ERROR, "Device has no compute queues!\n");
         return err;
     }
@@ -1273,24 +1377,29 @@ static av_cold int vulkan_encode_ffv1_init(AVCodecContext *avctx)
         max_heap_size = max_heap_size - (max_heap_size >> 3);
     }
 
+    if (!fv->async_depth) {
+        fv->async_depth = FFMIN(fv->qf.nb_queues, FFMAX(max_heap_size / maxsize, 1));
+        fv->async_depth = FFMAX(fv->async_depth, 1);
+    }
+
     av_log(avctx, AV_LOG_INFO, "Async buffers: %zuMiB per context, %zuMiB total, depth: %i\n",
            maxsize / (1024*1024),
            (fv->async_depth * maxsize) / (1024*1024),
            fv->async_depth);
 
-    err = ff_vk_exec_pool_init(&fv->s, fv->qf, &fv->exec_pool,
+    err = ff_vk_exec_pool_init(&fv->s, &fv->qf, &fv->exec_pool,
                                fv->async_depth,
                                0, 0, 0, NULL);
     if (err < 0)
         return err;
 
-    fv->transfer_qf = ff_vk_qf_find(&fv->s, VK_QUEUE_TRANSFER_BIT, 0);
-    if (!fv->transfer_qf) {
+    err = ff_vk_qf_init(&fv->s, &fv->transfer_qf, VK_QUEUE_TRANSFER_BIT);
+    if (err < 0) {
         av_log(avctx, AV_LOG_ERROR, "Device has no transfer queues!\n");
         return err;
     }
 
-    err = ff_vk_exec_pool_init(&fv->s, fv->transfer_qf, &fv->transfer_exec_pool,
+    err = ff_vk_exec_pool_init(&fv->s, &fv->transfer_qf, &fv->transfer_exec_pool,
                                1,
                                0, 0, 0, NULL);
     if (err < 0)
@@ -1457,8 +1566,6 @@ static const AVOption vulkan_encode_ffv1_options[] = {
             { .i64 = AC_RANGE_CUSTOM_TAB }, -2, 2, VE, .unit = "coder" },
         { "rice", "Golomb rice", 0, AV_OPT_TYPE_CONST,
             { .i64 = AC_GOLOMB_RICE }, INT_MIN, INT_MAX, VE, .unit = "coder" },
-        { "range_def", "Range with default table", 0, AV_OPT_TYPE_CONST,
-            { .i64 = AC_RANGE_DEFAULT_TAB_FORCE }, INT_MIN, INT_MAX, VE, .unit = "coder" },
         { "range_tab", "Range with custom table", 0, AV_OPT_TYPE_CONST,
             { .i64 = AC_RANGE_CUSTOM_TAB }, INT_MIN, INT_MAX, VE, .unit = "coder" },
     { "qtable", "Quantization table", OFFSET(ctx.qtable), AV_OPT_TYPE_INT,
@@ -1482,7 +1589,7 @@ static const AVOption vulkan_encode_ffv1_options[] = {
             { .i64 = 1 }, 0, 1, VE },
 
     { "async_depth", "Internal parallelization depth", OFFSET(async_depth), AV_OPT_TYPE_INT,
-            { .i64 = 1 }, 1, INT_MAX, VE },
+            { .i64 = 0 }, 0, INT_MAX, VE },
 
     { "remap_mode", "Remap Mode", OFFSET(ctx.remap_mode), AV_OPT_TYPE_INT,
             { .i64 = -1 }, -1, 2, VE, .unit = "remap_mode" },
@@ -1532,7 +1639,10 @@ const FFCodec ff_ffv1_vulkan_encoder = {
                       AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE,
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP | FF_CODEC_CAP_EOF_FLUSH,
     .defaults       = vulkan_encode_ffv1_defaults,
-    CODEC_PIXFMTS(AV_PIX_FMT_VULKAN),
+    .p.pix_fmts = (const enum AVPixelFormat[]) {
+        AV_PIX_FMT_VULKAN,
+        AV_PIX_FMT_NONE,
+    },
     .hw_configs     = vulkan_encode_ffv1_hw_configs,
     .p.wrapper_name = "vulkan",
 };

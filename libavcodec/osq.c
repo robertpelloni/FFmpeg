@@ -306,7 +306,7 @@ static int do_decode(AVCodecContext *avctx, AVFrame *frame, int decorrelate, int
                 dst[n] += (int)(P2 + P3) / 2 + (unsigned)p;
                 break;
             case 8:
-                dst[n] += (int)(P2 + P3) / 2 + 0U;
+                dst[n] += (int)(P2 + P3) / 2;
                 break;
             case 9:
                 dst[n] += (int)(P2 * 2 + P3) / 3 + (unsigned)p;
@@ -315,13 +315,13 @@ static int do_decode(AVCodecContext *avctx, AVFrame *frame, int decorrelate, int
                 dst[n] += (int)(P2 + P3 * 2) / 3 + (unsigned)p;
                 break;
             case 11:
-                dst[n] += (int)((unsigned)dst[A] + dst[B]) / 2 + 0U;
+                dst[n] += (int)((unsigned)dst[A] + dst[B]) / 2;
                 break;
             case 12:
                 dst[n] += (unsigned)dst[B];
                 break;
             case 13:
-                dst[n] += (int)((unsigned)dst[D] + dst[B]) / 2 + 0U;
+                dst[n] += (int)(unsigned)(dst[D] + dst[B]) / 2;
                 break;
             case 14:
                 dst[n] += (int)((unsigned)P2 + dst[A]) / 2 + (unsigned)p;

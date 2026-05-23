@@ -1874,10 +1874,11 @@ static int FUNC(frame_obu)(CodedBitstreamContext *ctx, RWContext *rw,
 
     CHECK(FUNC(byte_alignment)(ctx, rw));
 
+    CHECK(FUNC(tile_group_obu)(ctx, rw, &current->tile_group));
+
     return 0;
 }
 
-#if CBS_AV1_OBU_TILE_LIST
 static int FUNC(tile_list_obu)(CodedBitstreamContext *ctx, RWContext *rw,
                                AV1RawTileList *current)
 {
@@ -1892,9 +1893,7 @@ static int FUNC(tile_list_obu)(CodedBitstreamContext *ctx, RWContext *rw,
 
     return 0;
 }
-#endif
 
-#if CBS_AV1_OBU_METADATA
 static int FUNC(metadata_hdr_cll)(CodedBitstreamContext *ctx, RWContext *rw,
                                   AV1RawMetadataHDRCLL *current)
 {
@@ -2113,9 +2112,7 @@ static int FUNC(metadata_obu)(CodedBitstreamContext *ctx, RWContext *rw,
 
     return 0;
 }
-#endif
 
-#if CBS_AV1_OBU_PADDING
 static int FUNC(padding_obu)(CodedBitstreamContext *ctx, RWContext *rw,
                              AV1RawPadding *current)
 {
@@ -2139,4 +2136,3 @@ static int FUNC(padding_obu)(CodedBitstreamContext *ctx, RWContext *rw,
 
     return 0;
 }
-#endif

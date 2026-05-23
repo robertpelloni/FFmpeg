@@ -24,7 +24,6 @@
 #include <string.h>
 #include <inttypes.h>
 #include <stdarg.h>
-#include <signal.h>
 
 #undef HAVE_AV_CONFIG_H
 #include "libavutil/cpu.h"
@@ -150,51 +149,38 @@ static int fmt_comps(enum AVPixelFormat fmt)
     return comps;
 }
 
-static void get_ssim(float ssim[4], const AVFrame *out, const AVFrame *ref, int comps)
+static void get_mse(int mse[4], const AVFrame *a, const AVFrame *b, int comps)
 {
-    av_assert1(out->format == AV_PIX_FMT_YUVA444P);
-    av_assert1(ref->format == out->format);
-    av_assert1(ref->width == out->width && ref->height == out->height);
+    av_assert1(a->format == AV_PIX_FMT_YUVA420P);
+    av_assert1(b->format == a->format);
+    av_assert1(b->width == a->width && b->height == a->height);
 
     for (int p = 0; p < 4; p++) {
-        const int stride_a = out->linesize[p];
-        const int stride_b = ref->linesize[p];
-        const int w = out->width;
-        const int h = out->height;
-
         const int is_chroma = p == 1 || p == 2;
-        const uint8_t def = is_chroma ? 128 : 0xFF;
-        const int has_ref = comps & (1 << p);
-        double sum = 0;
-        int count = 0;
+        const int stride_a = a->linesize[p];
+        const int stride_b = b->linesize[p];
+        const int w = (a->width + is_chroma) >> is_chroma;
+        const int h = (a->height + is_chroma) >> is_chroma;
+        uint64_t sum = 0;
 
-        /* 4x4 SSIM */
-        for (int y = 0; y < (h & ~3); y += 4) {
-            for (int x = 0; x < (w & ~3); x += 4) {
-                const float c1 = .01 * .01 * 255 * 255 * 64;
-                const float c2 = .03 * .03 * 255 * 255 * 64 * 63;
-                int s1 = 0, s2 = 0, ss = 0, s12 = 0, var, covar;
-
-                for (int yy = 0; yy < 4; yy++) {
-                    for (int xx = 0; xx < 4; xx++) {
-                        int a = out->data[p][(y + yy) * stride_a + x + xx];
-                        int b = has_ref ? ref->data[p][(y + yy) * stride_b + x + xx] : def;
-                        s1  += a;
-                        s2  += b;
-                        ss  += a * a + b * b;
-                        s12 += a * b;
-                    }
+        if (comps & (1 << p)) {
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    int d = a->data[p][y * stride_a + x] - b->data[p][y * stride_b + x];
+                    sum += d * d;
                 }
-
-                var = ss * 64 - s1 * s1 - s2 * s2;
-                covar = s12 * 64 - s1 * s2;
-                sum += (2 * s1 * s2 + c1) * (2 * covar + c2) /
-                       ((s1 * s1 + s2 * s2 + c1) * (var + c2));
-                count++;
+            }
+        } else {
+            const int ref = is_chroma ? 128 : 0xFF;
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    int d = a->data[p][y * stride_a + x] - ref;
+                    sum += d * d;
+                }
             }
         }
 
-        ssim[p] = count ? sum / count : 0.0;
+        mse[p] = sum / (w * h);
     }
 }
 
@@ -983,8 +969,6 @@ int main(int argc, char **argv)
         .threads = 1,
         .iters   = 1,
         .prob    = 1.0,
-        .flags   = -1,
-        .dither  = -1,
     };
 
     AVFrame *ref = NULL;
@@ -1010,7 +994,7 @@ int main(int argc, char **argv)
         goto error;
     ref->width  = opts.w;
     ref->height = opts.h;
-    ref->format = AV_PIX_FMT_YUVA444P;
+    ref->format = AV_PIX_FMT_YUVA420P;
 
     ret = init_ref(ref, &opts);
     if (ret < 0)
@@ -1029,5 +1013,5 @@ error:
     av_frame_free(&ref);
     if (fp)
         fclose(fp);
-    exit_handler(ret);
+    return ret;
 }

@@ -250,7 +250,6 @@ static int config_output(AVFilterLink *outlink)
     AVFilterContext *ctx = outlink->src;
     ShearContext *s = ctx->priv;
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(outlink->format);
-    int ret;
 
     s->nb_planes = av_pix_fmt_count_planes(outlink->format);
     s->depth = desc->comp[0].depth;
@@ -312,15 +311,15 @@ static const AVFilterPad outputs[] = {
     },
 };
 
-const FFFilter ff_vf_shear = {
-    .p.name          = "shear",
-    .p.description   = NULL_IF_CONFIG_SMALL("Shear transform the input image."),
-    .p.priv_class    = &shear_class,
-    .p.flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
+const AVFilter ff_vf_shear = {
+    .name            = "shear",
+    .description     = NULL_IF_CONFIG_SMALL("Shear transform the input image."),
     .priv_size       = sizeof(ShearContext),
     .init            = init,
     FILTER_INPUTS(inputs),
     FILTER_OUTPUTS(outputs),
     FILTER_PIXFMTS_ARRAY(pix_fmts),
+    .priv_class      = &shear_class,
+    .flags           = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SLICE_THREADS,
     .process_command = process_command,
 };

@@ -31,10 +31,8 @@
 #include "libavutil/slicethread.h"
 
 #include "libswscale/swscale.h"
-#include "libswscale/format.h"
+#include "libswscale/utils.h"
 
-#include "cms.h"
-#include "lut3d.h"
 #include "swscale_internal.h"
 #include "graph.h"
 #include "ops.h"
@@ -755,16 +753,10 @@ static int adapt_colors(SwsGraph *graph, SwsFormat src, SwsFormat dst,
 
 static int init_passes(SwsGraph *graph)
 {
-    SwsFormat src = graph->src;
-    SwsFormat dst = graph->dst;
+    const SwsFormat src = graph->src;
+    const SwsFormat dst = graph->dst;
     SwsPass *pass = NULL; /* read from main input image */
     int ret;
-
-    ret = adapt_colors(graph, src, dst, pass, &pass);
-    if (ret < 0)
-        return ret;
-    src.format = pass ? pass->format : src.format;
-    src.color  = dst.color;
 
     if (!ff_fmt_equal(&src, &dst)) {
         ret = add_convert_pass(graph, &src, &dst, pass, &pass);
@@ -896,11 +888,11 @@ void ff_sws_graph_free(SwsGraph **pgraph)
 /* Tests only options relevant to SwsGraph */
 static int opts_equal(const SwsContext *c1, const SwsContext *c2)
 {
-    return c1->flags         == c2->flags         &&
-           c1->threads       == c2->threads       &&
-           c1->dither        == c2->dither        &&
-           c1->alpha_blend   == c2->alpha_blend   &&
-           c1->gamma_flag    == c2->gamma_flag    &&
+    return c1->flags       == c2->flags       &&
+           c1->threads     == c2->threads     &&
+           c1->dither      == c2->dither      &&
+           c1->alpha_blend == c2->alpha_blend &&
+           c1->gamma_flag  == c2->gamma_flag  &&
            c1->src_h_chr_pos == c2->src_h_chr_pos &&
            c1->src_v_chr_pos == c2->src_v_chr_pos &&
            c1->dst_h_chr_pos == c2->dst_h_chr_pos &&
@@ -920,16 +912,11 @@ int ff_sws_graph_reinit(SwsGraph *graph, SwsContext *ctx, const SwsFormat *dst,
     {
         ff_sws_graph_update_metadata(graph, &src->color);
         return 0;
-    }
 
     graph_uninit(graph);
     return ff_sws_graph_init(graph, ctx, dst, src, field);
 }
 
-void ff_sws_graph_update_metadata(SwsGraph *graph, const SwsColor *color)
-{
-    if (!color)
-        return;
 
     ff_color_update_dynamic(&graph->src.color, color);
 }

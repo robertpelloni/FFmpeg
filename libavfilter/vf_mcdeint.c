@@ -307,10 +307,9 @@ static const AVFilterPad mcdeint_inputs[] = {
     },
 };
 
-const FFFilter ff_vf_mcdeint = {
-    .p.name        = "mcdeint",
-    .p.description = NULL_IF_CONFIG_SMALL("Apply motion compensating deinterlacing."),
-    .p.priv_class  = &mcdeint_class,
+const AVFilter ff_vf_mcdeint = {
+    .name          = "mcdeint",
+    .description   = NULL_IF_CONFIG_SMALL("Apply motion compensating deinterlacing."),
     .priv_size     = sizeof(MCDeintContext),
     .uninit        = uninit,
     FILTER_INPUTS(mcdeint_inputs),

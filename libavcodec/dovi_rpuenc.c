@@ -339,12 +339,12 @@ static inline void put_ue_coef(PutBitContext *pb, const AVDOVIRpuDataHeader *hdr
     switch (hdr->coef_data_type) {
     case RPU_COEFF_FIXED:
         set_ue_golomb(pb, coef >> hdr->coef_log2_denom);
-        put_bits63(pb, hdr->coef_log2_denom,
+        put_bits64(pb, hdr->coef_log2_denom,
                    coef & ((1LL << hdr->coef_log2_denom) - 1));
         break;
     case RPU_COEFF_FLOAT:
         fpart.f32 = coef / (float) (1LL << hdr->coef_log2_denom);
-        put_bits63(pb, hdr->coef_log2_denom, fpart.u32);
+        put_bits64(pb, hdr->coef_log2_denom, fpart.u32);
         break;
     }
 }
@@ -357,12 +357,12 @@ static inline void put_se_coef(PutBitContext *pb, const AVDOVIRpuDataHeader *hdr
     switch (hdr->coef_data_type) {
     case RPU_COEFF_FIXED:
         set_se_golomb(pb, coef >> hdr->coef_log2_denom);
-        put_bits63(pb, hdr->coef_log2_denom,
+        put_bits64(pb, hdr->coef_log2_denom,
                    coef & ((1LL << hdr->coef_log2_denom) - 1));
         break;
     case RPU_COEFF_FLOAT:
         fpart.f32 = coef / (float) (1LL << hdr->coef_log2_denom);
-        put_bits63(pb, hdr->coef_log2_denom, fpart.u32);
+        put_bits64(pb, hdr->coef_log2_denom, fpart.u32);
         break;
     }
 }
@@ -602,7 +602,7 @@ int ff_dovi_rpu_generate(DOVIContext *s, const AVDOVIMetadata *metadata,
     use_prev_vdr_rpu = 0;
 
     if (!s->vdr[vdr_rpu_id]) {
-        s->vdr[vdr_rpu_id] = av_refstruct_allocz(sizeof(AVDOVIDataMapping));
+        s->vdr[vdr_rpu_id] = ff_refstruct_allocz(sizeof(AVDOVIDataMapping));
         if (!s->vdr[vdr_rpu_id])
             return AVERROR(ENOMEM);
     }
@@ -626,12 +626,12 @@ int ff_dovi_rpu_generate(DOVIContext *s, const AVDOVIMetadata *metadata,
          * references requires extended compression */
         for (int i = 0; i <= DOVI_MAX_DM_ID; i++) {
             if (i != vdr_rpu_id)
-                av_refstruct_unref(&s->vdr[i]);
+                ff_refstruct_unref(&s->vdr[i]);
         }
     }
 
     if (metadata->num_ext_blocks && !s->ext_blocks) {
-        s->ext_blocks = av_refstruct_allocz(sizeof(*s->ext_blocks));
+        s->ext_blocks = ff_refstruct_allocz(sizeof(*s->ext_blocks));
         if (!s->ext_blocks)
             return AVERROR(ENOMEM);
     }
@@ -641,7 +641,7 @@ int ff_dovi_rpu_generate(DOVIContext *s, const AVDOVIMetadata *metadata,
         vdr_dm_metadata_present = 1;
 
     if (vdr_dm_metadata_present && !s->dm) {
-        s->dm = av_refstruct_allocz(sizeof(AVDOVIColorMetadata));
+        s->dm = ff_refstruct_allocz(sizeof(AVDOVIColorMetadata));
         if (!s->dm)
             return AVERROR(ENOMEM);
     }
@@ -865,7 +865,7 @@ int ff_dovi_rpu_generate(DOVIContext *s, const AVDOVIMetadata *metadata,
         }
     } else {
         s->color = &ff_dovi_color_default;
-        av_refstruct_unref(&s->ext_blocks);
+        ff_refstruct_unref(&s->ext_blocks);
     }
 
     flush_put_bits(pb);

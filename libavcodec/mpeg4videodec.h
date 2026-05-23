@@ -75,8 +75,6 @@ typedef struct Mpeg4DecContext {
     int divx_build;
     int xvid_build;
     int lavc_build;
-    /// Divx 5.01 puts several frames in a single one, this is used to reorder them
-    AVBufferRef *bitstream_buffer;
 
     int vo_type;
 
@@ -123,7 +121,7 @@ int ff_mpeg4_decode_studio_slice_header(H263DecContext *const h);
 void ff_mpeg4_workaround_bugs(AVCodecContext *avctx);
 void ff_mpeg4_pred_ac(H263DecContext *const h, int16_t *block, int n,
                       int dir);
-int ff_mpeg4_frame_end(AVCodecContext *avctx, const AVPacket *pkt);
+int ff_mpeg4_frame_end(AVCodecContext *avctx, const uint8_t *buf, int buf_size);
 
 
 #endif

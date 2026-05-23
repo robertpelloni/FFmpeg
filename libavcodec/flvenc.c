@@ -20,13 +20,14 @@
 
 #include "codec_internal.h"
 #include "flvenc.h"
+#include "h263data.h"
 #include "mpegvideo.h"
+#include "mpegvideodata.h"
 #include "mpegvideoenc.h"
 #include "put_bits.h"
 
-int ff_flv_encode_picture_header(MPVMainEncContext *const m)
+void ff_flv_encode_picture_header(MpegEncContext *s)
 {
-    MPVEncContext *const s = &m->s;
     int format;
 
     put_bits_assume_flushed(&s->pb);
@@ -39,32 +40,38 @@ int ff_flv_encode_picture_header(MPVMainEncContext *const m)
               s->c.avctx->time_base.den) & 0xff);   /* TemporalReference */
     if (s->c.width == 352 && s->c.height == 288)
         format = 2;
-    else if (s->c.width == 176 && s->c.height == 144)
+    else if (s->width == 176 && s->height == 144)
         format = 3;
-    else if (s->c.width == 128 && s->c.height == 96)
+    else if (s->width == 128 && s->height == 96)
         format = 4;
-    else if (s->c.width == 320 && s->c.height == 240)
+    else if (s->width == 320 && s->height == 240)
         format = 5;
-    else if (s->c.width == 160 && s->c.height == 120)
+    else if (s->width == 160 && s->height == 120)
         format = 6;
-    else if (s->c.width <= 255 && s->c.height <= 255)
+    else if (s->width <= 255 && s->height <= 255)
         format = 0;   /* use 1 byte width & height */
     else
         format = 1;   /* use 2 bytes width & height */
     put_bits(&s->pb, 3, format);   /* PictureSize */
     if (format == 0) {
-        put_bits(&s->pb, 8, s->c.width);
-        put_bits(&s->pb, 8, s->c.height);
+        put_bits(&s->pb, 8, s->width);
+        put_bits(&s->pb, 8, s->height);
     } else if (format == 1) {
-        put_bits(&s->pb, 16, s->c.width);
-        put_bits(&s->pb, 16, s->c.height);
+        put_bits(&s->pb, 16, s->width);
+        put_bits(&s->pb, 16, s->height);
     }
-    put_bits(&s->pb, 2, s->c.pict_type == AV_PICTURE_TYPE_P);   /* PictureType */
+    put_bits(&s->pb, 2, s->pict_type == AV_PICTURE_TYPE_P);   /* PictureType */
     put_bits(&s->pb, 1, 1);   /* DeblockingFlag: on */
-    put_bits(&s->pb, 5, s->c.qscale);   /* Quantizer */
+    put_bits(&s->pb, 5, s->qscale);   /* Quantizer */
     put_bits(&s->pb, 1, 0);   /* ExtraInformation */
 
-    return 0;
+    if (s->h263_aic) {
+        s->y_dc_scale_table =
+        s->c_dc_scale_table = ff_aic_dc_scale_table;
+    } else {
+        s->y_dc_scale_table =
+        s->c_dc_scale_table = ff_mpeg1_dc_scale_table;
+    }
 }
 
 const FFCodec ff_flv_encoder = {
@@ -73,12 +80,13 @@ const FFCodec ff_flv_encoder = {
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_FLV1,
     .p.priv_class   = &ff_mpv_enc_class,
-    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE,
-    .priv_data_size = sizeof(MPVMainEncContext),
+    .priv_data_size = sizeof(MpegEncContext),
     .init           = ff_mpv_encode_init,
     FF_CODEC_ENCODE_CB(ff_mpv_encode_picture),
     .close          = ff_mpv_encode_end,
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
-    CODEC_PIXFMTS(AV_PIX_FMT_YUV420P),
+    .p.pix_fmts     = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P,
+                                                     AV_PIX_FMT_NONE},
     .color_ranges   = AVCOL_RANGE_MPEG,
+    .p.capabilities = AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE,
 };

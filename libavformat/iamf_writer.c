@@ -19,7 +19,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/bprint.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/iamf.h"
@@ -59,7 +58,7 @@ static int update_extradata(IAMFCodecConfig *codec_config)
             return ret;
 
         put_bits32(&pb, get_bits_long(&gb, 32)); // min/max blocksize
-        put_bits63(&pb, 48, get_bits64(&gb, 48)); // min/max framesize
+        put_bits64(&pb, 48, get_bits64(&gb, 48)); // min/max framesize
         put_bits(&pb, 20, get_bits(&gb, 20)); // samplerate
         skip_bits(&gb, 3);
         put_bits(&pb, 3, 1); // set channels to stereo
@@ -119,17 +118,9 @@ static int fill_codec_config(IAMFContext *iamf, const AVStreamGroup *stg,
     }
 
     codec_config->codec_id = st->codecpar->codec_id;
+    codec_config->sample_rate = st->codecpar->sample_rate;
     codec_config->codec_tag = st->codecpar->codec_tag;
-    switch (codec_config->codec_id) {
-    case AV_CODEC_ID_OPUS:
-        codec_config->sample_rate = 48000;
-        codec_config->nb_samples = av_rescale(st->codecpar->frame_size, 48000, st->codecpar->sample_rate);
-        break;
-    default:
-        codec_config->sample_rate = st->codecpar->sample_rate;
-        codec_config->nb_samples = st->codecpar->frame_size;
-        break;
-    }
+    codec_config->nb_samples = st->codecpar->frame_size;
     populate_audio_roll_distance(codec_config);
     if (st->codecpar->extradata_size) {
         if (st->codecpar->extradata_size > INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE)
@@ -203,9 +194,9 @@ static int add_param_definition(IAMFContext *iamf, AVIAMFParamDefinition *param,
     }
     if (codec_config) {
         if (!param->duration)
-            param->duration = av_rescale(codec_config->nb_samples, param->parameter_rate, codec_config->sample_rate);
+            param->duration = codec_config->nb_samples;
         if (!param->constant_subblock_duration)
-            param->constant_subblock_duration = av_rescale(codec_config->nb_samples, param->parameter_rate, codec_config->sample_rate);
+            param->constant_subblock_duration = codec_config->nb_samples;
     }
 
     param_definition = av_mallocz(sizeof(*param_definition));
@@ -229,10 +220,6 @@ int ff_iamf_add_audio_element(IAMFContext *iamf, const AVStreamGroup *stg, void 
 
     if (stg->type != AV_STREAM_GROUP_PARAMS_IAMF_AUDIO_ELEMENT)
         return AVERROR(EINVAL);
-    if (!stg->nb_streams) {
-        av_log(log_ctx, AV_LOG_ERROR, "Audio Element id %"PRId64" has no streams\n", stg->id);
-        return AVERROR(EINVAL);
-    }
 
     iamf_audio_element = stg->params.iamf_audio_element;
     if (iamf_audio_element->audio_element_type == AV_IAMF_AUDIO_ELEMENT_TYPE_SCENE) {
@@ -437,10 +424,6 @@ int ff_iamf_add_mix_presentation(IAMFContext *iamf, const AVStreamGroup *stg, vo
 
     if (stg->type != AV_STREAM_GROUP_PARAMS_IAMF_MIX_PRESENTATION)
         return AVERROR(EINVAL);
-    if (!stg->nb_streams) {
-        av_log(log_ctx, AV_LOG_ERROR, "Mix Presentation id %"PRId64" has no streams\n", stg->id);
-        return AVERROR(EINVAL);
-    }
 
     for (int i = 0; i < iamf->nb_mix_presentations; i++) {
         if (stg->id == iamf->mix_presentations[i]->mix_presentation_id) {
@@ -657,8 +640,6 @@ static int scalable_channel_layout_config(const IAMFAudioElement *audio_element,
             put_bits(&pb, 2, 0);
             put_bits(&pb, 16, rescale_rational(layer->output_gain, 1 << 8));
         }
-        if (expanded_layout >= 0)
-            put_bits(&pb, 8, expanded_layout);
         flush_put_bits(&pb);
         avio_write(dyn_bc, header, put_bytes_count(&pb, 1));
     }

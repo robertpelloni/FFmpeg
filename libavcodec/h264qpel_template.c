@@ -78,6 +78,7 @@ static inline void FUNC(copy_block16)(uint8_t *dst, const uint8_t *restrict src,
 static void FUNC(OPNAME ## h264_qpel4_h_lowpass)(uint8_t *_dst, const uint8_t *restrict _src, int dstStride, int srcStride)\
 {\
     const int h=4;\
+    INIT_CLIP\
     int i;\
     pixel *dst = (pixel*)_dst;\
     const pixel *restrict src = (const pixel*)_src;\
@@ -97,6 +98,7 @@ static void FUNC(OPNAME ## h264_qpel4_h_lowpass)(uint8_t *_dst, const uint8_t *r
 static void FUNC(OPNAME ## h264_qpel4_v_lowpass)(uint8_t *_dst, const uint8_t *restrict _src, int dstStride, int srcStride)\
 {\
     const int w=4;\
+    INIT_CLIP\
     int i;\
     pixel *dst = (pixel*)_dst;\
     const pixel *restrict src = (const pixel*)_src;\
@@ -127,6 +129,7 @@ static void FUNC(OPNAME ## h264_qpel4_hv_lowpass)(uint8_t *_dst, pixeltmp *tmp, 
     const int h=4;\
     const int w=4;\
     const int pad = (BIT_DEPTH == 10) ? (-10 * ((1<<BIT_DEPTH)-1)) : 0;\
+    INIT_CLIP\
     int i;\
     pixel *dst = (pixel*)_dst;\
     const pixel *restrict src = (const pixel*)_src;\
@@ -166,6 +169,7 @@ static void FUNC(OPNAME ## h264_qpel4_hv_lowpass)(uint8_t *_dst, pixeltmp *tmp, 
 static void FUNC(OPNAME ## h264_qpel8_h_lowpass)(uint8_t *_dst, const uint8_t *restrict _src, int dstStride, int srcStride)\
 {\
     const int h=8;\
+    INIT_CLIP\
     int i;\
     pixel *dst = (pixel*)_dst;\
     const pixel *restrict src = (const pixel*)_src;\
@@ -189,6 +193,7 @@ static void FUNC(OPNAME ## h264_qpel8_h_lowpass)(uint8_t *_dst, const uint8_t *r
 static void FUNC(OPNAME ## h264_qpel8_v_lowpass)(uint8_t *_dst, const uint8_t *restrict _src, int dstStride, int srcStride)\
 {\
     const int w=8;\
+    INIT_CLIP\
     int i;\
     pixel *dst = (pixel*)_dst;\
     const pixel *restrict src = (const pixel*)_src;\
@@ -227,6 +232,7 @@ static void FUNC(OPNAME ## h264_qpel8_hv_lowpass)(uint8_t *_dst, pixeltmp *tmp, 
     const int h=8;\
     const int w=8;\
     const int pad = (BIT_DEPTH == 10) ? (-10 * ((1<<BIT_DEPTH)-1)) : 0;\
+    INIT_CLIP\
     int i;\
     pixel *dst = (pixel*)_dst;\
     const pixel *restrict src = (const pixel*)_src;\

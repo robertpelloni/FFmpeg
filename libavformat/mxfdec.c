@@ -57,6 +57,7 @@
 #include "libavcodec/defs.h"
 #include "libavcodec/internal.h"
 #include "libavutil/channel_layout.h"
+#include "libavutil/dict_internal.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/parseutils.h"
 #include "libavutil/timecode.h"
@@ -500,9 +501,6 @@ static int klv_read_packet(MXFContext *mxf, KLVPacket *klv, AVIOContext *pb)
     if (length < 0)
         return length;
     klv->length = length;
-    if (klv->offset > INT64_MAX - 16 - llen)
-        return AVERROR_INVALIDDATA;
-
     pos = klv->offset + 16 + llen;
     if (pos > INT64_MAX - length)
         return AVERROR_INVALIDDATA;
@@ -1939,8 +1937,6 @@ static int mxf_edit_unit_absolute_offset(MXFContext *mxf, MXFIndexTable *index_t
     // clamp to actual range of index
     index_end = av_sat_add64(last_segment->index_start_position, last_segment->index_duration);
     edit_unit = FFMAX(FFMIN(edit_unit, index_end), first_segment->index_start_position);
-    if (edit_unit < 0)
-        return AVERROR_PATCHWELCOME;
 
     // guess which table segment this edit unit is in
     // saturation is fine since it's just a guess
@@ -3216,7 +3212,7 @@ static int64_t mxf_timestamp_to_int64(uint64_t timestamp)
 
 #define SET_TS_METADATA(pb, name, var, str) do { \
     var = avio_rb64(pb); \
-    if (var && (ret = ff_dict_set_timestamp(&s->metadata, name, mxf_timestamp_to_int64(var))) < 0) \
+    if (var && (ret = avpriv_dict_set_timestamp(&s->metadata, name, mxf_timestamp_to_int64(var))) < 0) \
         return ret; \
 } while (0)
 
@@ -3965,7 +3961,7 @@ static int64_t mxf_set_current_edit_unit(MXFContext *mxf, AVStream *st, int64_t 
     int64_t new_edit_unit;
     MXFIndexTable *t = mxf_find_index_table(mxf, track->index_sid);
 
-    if (!t || track->wrapping == UnknownWrapped || edit_unit > INT64_MAX - track->edit_units_per_packet)
+    if (!t || track->wrapping == UnknownWrapped)
         return -1;
 
     if (mxf_edit_unit_absolute_offset(mxf, t, edit_unit + track->edit_units_per_packet, track->edit_rate, NULL, &next_ofs, NULL, 0) < 0 &&

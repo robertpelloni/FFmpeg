@@ -341,7 +341,6 @@ static av_cold int adpcm_decode_init(AVCodecContext * avctx)
     case AV_CODEC_ID_ADPCM_IMA_DAT4:
     case AV_CODEC_ID_ADPCM_IMA_QT:
     case AV_CODEC_ID_ADPCM_IMA_WAV:
-    case AV_CODEC_ID_ADPCM_IMA_XBOX:
     case AV_CODEC_ID_ADPCM_4XM:
     case AV_CODEC_ID_ADPCM_XA:
     case AV_CODEC_ID_ADPCM_XMD:
@@ -1332,15 +1331,6 @@ static int get_nb_samples(AVCodecContext *avctx, GetByteContext *gb,
             return AVERROR_INVALIDDATA;
         nb_samples = 1 + (buf_size - 4 * ch) / (bsize * ch) * bsamples;
         ) /* End of CASE */
-    CASE(ADPCM_IMA_XBOX,
-        int bsize = ff_adpcm_ima_block_sizes[avctx->bits_per_coded_sample - 2];
-        int bsamples = ff_adpcm_ima_block_samples[avctx->bits_per_coded_sample - 2];
-        if (avctx->block_align > 0)
-            buf_size = FFMIN(buf_size, avctx->block_align);
-        if (buf_size < 4 * ch)
-            return AVERROR_INVALIDDATA;
-        nb_samples = (buf_size - 4 * ch) / (bsize * ch) * bsamples + 1;
-        ) /* End of CASE */
     case AV_CODEC_ID_ADPCM_MS:
         if (avctx->block_align > 0)
             buf_size = FFMIN(buf_size, avctx->block_align);
@@ -1568,32 +1558,6 @@ static int adpcm_decode_frame(AVCodecContext *avctx, AVFrame *frame,
                 }
             }
         }
-        ) /* End of CASE */
-    CASE(ADPCM_IMA_XBOX,
-        for (int i = 0; i < channels; i++) {
-            ADPCMChannelStatus *cs = &c->status[i];
-            cs->predictor = samples_p[i][0] = sign_extend(bytestream2_get_le16u(&gb), 16);
-
-            cs->step_index = sign_extend(bytestream2_get_le16u(&gb), 16);
-            if (cs->step_index > 88u) {
-                av_log(avctx, AV_LOG_ERROR, "ERROR: step_index[%d] = %i\n",
-                       i, cs->step_index);
-                return AVERROR_INVALIDDATA;
-            }
-        }
-
-        for (int n = 0; n < (nb_samples-1) / 8; n++) {
-            for (int i = 0; i < channels; i++) {
-                ADPCMChannelStatus *cs = &c->status[i];
-                samples = &samples_p[i][1 + n * 8];
-                for (int m = 0; m < 8; m += 2) {
-                    int v = bytestream2_get_byteu(&gb);
-                    samples[m    ] = adpcm_ima_expand_nibble(cs, v & 0x0F, 3);
-                    samples[m + 1] = adpcm_ima_expand_nibble(cs, v >> 4  , 3);
-                }
-            }
-        }
-        frame->nb_samples--;
         ) /* End of CASE */
     CASE(ADPCM_4XM,
         for (int i = 0; i < channels; i++)
