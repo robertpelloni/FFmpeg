@@ -9,7 +9,7 @@ resources:
       type: github
       endpoint: TopazLabs
       name: FFmpeg/nv-codec-headers
-      ref: refs/tags/n12.1.14.0
+      ref: refs/tags/n13.0.19.0
 
 parameters:
   - name: version
@@ -57,12 +57,10 @@ stages:
     - job: Windows2019
       workspace:
         clean: all
-      strategy:
-        matrix:
-          windows:
-            imageName: 'windows-2019'
       pool:
-        vmImage: $(imageName)
+          name: Default
+          demands:
+            - Agent.Name -equals Medusa
       steps:
         - template: win.yml
 

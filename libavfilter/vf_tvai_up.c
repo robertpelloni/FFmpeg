@@ -184,15 +184,15 @@ static const AVFilterPad tvai_up_outputs[] = {
     },
 };
 
-const AVFilter ff_vf_tvai_up = {
-    .name          = "tvai_up",
-    .description   = NULL_IF_CONFIG_SMALL("Apply Topaz Video AI upscale models, parameters will only be applied to appropriate models"),
+const FFFilter ff_vf_tvai_up = {
+    .p.name          = "tvai_up",
+    .p.description   = NULL_IF_CONFIG_SMALL("Apply Topaz Video AI upscale models, parameters will only be applied to appropriate models"),
     .priv_size     = sizeof(TVAIUpContext),
     .init          = init,
     .uninit        = uninit,
     FILTER_INPUTS(tvai_up_inputs),
     FILTER_OUTPUTS(tvai_up_outputs),
     FILTER_PIXFMTS_ARRAY(pix_fmts),
-    .priv_class    = &tvai_up_class,
-    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
+    .p.priv_class    = &tvai_up_class,
+    .p.flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };
