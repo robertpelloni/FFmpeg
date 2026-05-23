@@ -40,8 +40,15 @@ class conanRecipe(ConanFile):
     def requirements(self):
         self.requires("videoai/1.9.24-astra")
         self.requires("libvpx/1.11.0")
-        self.requires("aom/3.5.0")
-        self.requires("zimg/3.0.5")
+        if self.settings.os != "Linux":
+            self.requires("aom/3.5.0@josh")
+        else:
+            self.requires("aom/3.5.0")
+
+        if self.settings.os == "Macos" and self.settings.arch == "x86_64":
+            self.requires("zimg/3.0.5@josh/oiio3")
+        else:
+            self.requires("zimg/3.0.5")
         if self.settings.os == "Windows":
             self.requires("libaom-av1/3.5.0#041e72afabd2cb62567a667c7f9ed08a")
             self.requires("amf/1.4.36")
@@ -55,7 +62,7 @@ class conanRecipe(ConanFile):
             self.requires("libx265/3.4")
 
     def generate(self):
-        for dep in self.dependencies.values():
+        for dep_name, dep in self.dependencies.items():
             if dep.package_folder:
                 print(f"copying {dep}: {dep.package_folder} -> {self.build_folder}")
                 if self.settings.os == "Windows":
@@ -72,6 +79,8 @@ class conanRecipe(ConanFile):
                 if self.settings.os == "Macos":
                     copy(self, "*", src=os.path.join(dep.package_folder, "include"), dst="include")
                     copy(self, "*", src=os.path.join(dep.package_folder, "lib"), dst="lib")
+                    if "nasm" in str(dep_name):
+                        copy(self, "*", src=os.path.join(dep.package_folder, "bin"), dst="bin")
                 if self.settings.os == "Linux":
                     copy(self, "*", src=os.path.join(dep.package_folder, "include"), dst="include")
                     copy(self, "*", src=os.path.join(dep.package_folder, "lib"), dst="lib")

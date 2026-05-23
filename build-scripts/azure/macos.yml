@@ -1,5 +1,9 @@
 steps:
   - checkout: self
+    persistCredentials: true
+    clean: true
+    fetchDepth: 1
+    fetchTags: false
   - checkout: topaz-conan-dev
   - checkout: pipeline-helper
     
