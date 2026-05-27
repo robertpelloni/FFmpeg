@@ -33,8 +33,7 @@ typedef struct AvgBlurVulkanContext {
 
     int initialized;
     FFVkExecPool e;
-    FFVkQueueFamilyCtx qf;
-    VkSampler sampler;
+    AVVulkanDeviceQueueFamily *qf;
     FFVulkanShader shd;
 
     /* Push constants / options */
@@ -143,14 +142,9 @@ static void avgblur_vulkan_uninit(AVFilterContext *avctx)
 {
     AvgBlurVulkanContext *s = avctx->priv;
     FFVulkanContext *vkctx = &s->vkctx;
-    FFVulkanFunctions *vk = &vkctx->vkfn;
 
     ff_vk_exec_pool_free(vkctx, &s->e);
     ff_vk_shader_free(vkctx, &s->shd);
-
-    if (s->sampler)
-        vk->DestroySampler(vkctx->hwctx->act_dev, s->sampler,
-                           vkctx->hwctx->alloc);
 
     ff_vk_uninit(&s->vkctx);
 
@@ -185,16 +179,16 @@ static const AVFilterPad avgblur_vulkan_outputs[] = {
     },
 };
 
-const AVFilter ff_vf_avgblur_vulkan = {
-    .name           = "avgblur_vulkan",
-    .description    = NULL_IF_CONFIG_SMALL("Apply avgblur mask to input video"),
+const FFFilter ff_vf_avgblur_vulkan = {
+    .p.name         = "avgblur_vulkan",
+    .p.description  = NULL_IF_CONFIG_SMALL("Apply avgblur mask to input video"),
+    .p.priv_class   = &avgblur_vulkan_class,
+    .p.flags        = AVFILTER_FLAG_HWDEVICE,
     .priv_size      = sizeof(AvgBlurVulkanContext),
     .init           = &ff_vk_filter_init,
     .uninit         = &avgblur_vulkan_uninit,
     FILTER_INPUTS(avgblur_vulkan_inputs),
     FILTER_OUTPUTS(avgblur_vulkan_outputs),
     FILTER_SINGLE_PIXFMT(AV_PIX_FMT_VULKAN),
-    .priv_class     = &avgblur_vulkan_class,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
-    .flags          = AVFILTER_FLAG_HWDEVICE,
 };

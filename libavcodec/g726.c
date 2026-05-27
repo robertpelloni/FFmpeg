@@ -401,8 +401,7 @@ const FFCodec ff_adpcm_g726_encoder = {
     .priv_data_size = sizeof(G726Context),
     .init           = g726_encode_init,
     FF_CODEC_ENCODE_CB(g726_encode_frame),
-    .p.sample_fmts  = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
-                                                     AV_SAMPLE_FMT_NONE },
+    CODEC_SAMPLEFMTS(AV_SAMPLE_FMT_S16),
     .p.priv_class   = &g726_class,
     .defaults       = defaults,
 };
@@ -419,8 +418,7 @@ const FFCodec ff_adpcm_g726le_encoder = {
     .priv_data_size = sizeof(G726Context),
     .init           = g726_encode_init,
     FF_CODEC_ENCODE_CB(g726_encode_frame),
-    .p.sample_fmts  = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
-                                                     AV_SAMPLE_FMT_NONE },
+    CODEC_SAMPLEFMTS(AV_SAMPLE_FMT_S16),
     .p.priv_class   = &g726_class,
     .defaults       = defaults,
 };

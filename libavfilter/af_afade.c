@@ -435,17 +435,17 @@ static const AVFilterPad avfilter_af_afade_outputs[] = {
     },
 };
 
-const AVFilter ff_af_afade = {
-    .name          = "afade",
-    .description   = NULL_IF_CONFIG_SMALL("Fade in/out input audio."),
+const FFFilter ff_af_afade = {
+    .p.name        = "afade",
+    .p.description = NULL_IF_CONFIG_SMALL("Fade in/out input audio."),
+    .p.priv_class  = &afade_class,
+    .p.flags       = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
     .priv_size     = sizeof(AudioFadeContext),
     .init          = init,
     FILTER_INPUTS(avfilter_af_afade_inputs),
     FILTER_OUTPUTS(avfilter_af_afade_outputs),
     FILTER_SAMPLEFMTS_ARRAY(sample_fmts),
-    .priv_class    = &afade_class,
     .process_command = process_command,
-    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };
 
 #endif /* CONFIG_AFADE_FILTER */

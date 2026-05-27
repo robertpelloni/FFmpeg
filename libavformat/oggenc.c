@@ -263,7 +263,8 @@ static int ogg_buffer_data(AVFormatContext *s, AVStream *st,
 
         len = FFMIN(size, segments*255);
         page->segments[page->segments_count++] = len - (segments-1)*255;
-        memcpy(page->data+page->size, p, len);
+        if (len)
+            memcpy(page->data+page->size, p, len);
         p += len;
         size -= len;
         i += segments;
@@ -782,7 +783,7 @@ static int ogg_write_packet(AVFormatContext *s, AVPacket *pkt)
     int i;
 
     if (pkt)
-        return pkt->size ? ogg_write_packet_internal(s, pkt) : 0;
+        return pkt->size || !pkt->side_data_elems ? ogg_write_packet_internal(s, pkt) : 0;
 
     for (i = 0; i < s->nb_streams; i++) {
         OGGStreamContext *oggstream = s->streams[i]->priv_data;
@@ -802,7 +803,7 @@ static int ogg_write_trailer(AVFormatContext *s)
     for (i = 0; i < s->nb_streams; i++) {
         OGGStreamContext *oggstream = s->streams[i]->priv_data;
 
-        if (oggstream->page.size > 0)
+        if (oggstream->page.segments_count)
             ogg_buffer_page(s, oggstream);
     }
 
@@ -856,11 +857,7 @@ const FFOutputFormat ff_ogg_muxer = {
     .write_packet      = ogg_write_packet,
     .write_trailer     = ogg_write_trailer,
     .deinit            = ogg_free,
-#if FF_API_ALLOW_FLUSH
-    .p.flags           = AVFMT_TS_NEGATIVE | AVFMT_TS_NONSTRICT | AVFMT_ALLOW_FLUSH,
-#else
     .p.flags           = AVFMT_TS_NEGATIVE | AVFMT_TS_NONSTRICT,
-#endif
     .p.priv_class      = &ogg_muxer_class,
     .flags_internal    = FF_OFMT_FLAG_ALLOW_FLUSH,
 };
@@ -879,11 +876,7 @@ const FFOutputFormat ff_oga_muxer = {
     .write_packet      = ogg_write_packet,
     .write_trailer     = ogg_write_trailer,
     .deinit            = ogg_free,
-#if FF_API_ALLOW_FLUSH
-    .p.flags           = AVFMT_TS_NEGATIVE | AVFMT_ALLOW_FLUSH,
-#else
     .p.flags           = AVFMT_TS_NEGATIVE,
-#endif
     .p.priv_class      = &ogg_muxer_class,
     .flags_internal    = FF_OFMT_FLAG_ALLOW_FLUSH,
 };
@@ -905,11 +898,7 @@ const FFOutputFormat ff_ogv_muxer = {
     .write_packet      = ogg_write_packet,
     .write_trailer     = ogg_write_trailer,
     .deinit            = ogg_free,
-#if FF_API_ALLOW_FLUSH
-    .p.flags           = AVFMT_TS_NEGATIVE | AVFMT_TS_NONSTRICT | AVFMT_ALLOW_FLUSH,
-#else
     .p.flags           = AVFMT_TS_NEGATIVE | AVFMT_TS_NONSTRICT,
-#endif
     .p.priv_class      = &ogg_muxer_class,
     .flags_internal    = FF_OFMT_FLAG_ALLOW_FLUSH,
 };
@@ -928,11 +917,7 @@ const FFOutputFormat ff_spx_muxer = {
     .write_packet      = ogg_write_packet,
     .write_trailer     = ogg_write_trailer,
     .deinit            = ogg_free,
-#if FF_API_ALLOW_FLUSH
-    .p.flags           = AVFMT_TS_NEGATIVE | AVFMT_ALLOW_FLUSH,
-#else
     .p.flags           = AVFMT_TS_NEGATIVE,
-#endif
     .p.priv_class      = &ogg_muxer_class,
     .flags_internal    = FF_OFMT_FLAG_ALLOW_FLUSH,
 };
@@ -951,11 +936,7 @@ const FFOutputFormat ff_opus_muxer = {
     .write_packet      = ogg_write_packet,
     .write_trailer     = ogg_write_trailer,
     .deinit            = ogg_free,
-#if FF_API_ALLOW_FLUSH
-    .p.flags           = AVFMT_TS_NEGATIVE | AVFMT_ALLOW_FLUSH,
-#else
     .p.flags           = AVFMT_TS_NEGATIVE,
-#endif
     .p.priv_class      = &ogg_muxer_class,
     .flags_internal    = FF_OFMT_FLAG_ALLOW_FLUSH,
 };

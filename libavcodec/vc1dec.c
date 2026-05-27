@@ -781,6 +781,7 @@ static av_cold void vc1_decode_reset(AVCodecContext *avctx)
     for (i = 0; i < 4; i++)
         av_freep(&v->sr_rows[i >> 1][i & 1]);
     ff_mpv_common_end(&v->s);
+    memset(v->s.block_index, 0, sizeof(v->s.block_index));
     av_freep(&v->mv_type_mb_plane);
     av_freep(&v->direct_mb_plane);
     av_freep(&v->forward_mb_plane);
@@ -1095,7 +1096,7 @@ static int vc1_decode_frame(AVCodecContext *avctx, AVFrame *pict,
         if (v->field_mode && buf_start_second_field) {
             // decode first field
             s->picture_structure = PICT_BOTTOM_FIELD - v->tff;
-            ret = hwaccel->start_frame(avctx, buf_start,
+            ret = hwaccel->start_frame(avctx, avpkt->buf, buf_start,
                                        buf_start_second_field - buf_start);
             if (ret < 0)
                 goto err;
@@ -1150,7 +1151,7 @@ static int vc1_decode_frame(AVCodecContext *avctx, AVFrame *pict,
             }
             v->s.cur_pic.ptr->f->pict_type = v->s.pict_type;
 
-            ret = hwaccel->start_frame(avctx, buf_start_second_field,
+            ret = hwaccel->start_frame(avctx, avpkt->buf, buf_start_second_field,
                                        (buf + buf_size) - buf_start_second_field);
             if (ret < 0)
                 goto err;
@@ -1193,7 +1194,7 @@ static int vc1_decode_frame(AVCodecContext *avctx, AVFrame *pict,
                 goto err;
         } else {
             s->picture_structure = PICT_FRAME;
-            ret = hwaccel->start_frame(avctx, buf_start,
+            ret = hwaccel->start_frame(avctx, avpkt->buf, buf_start,
                                        (buf + buf_size) - buf_start);
             if (ret < 0)
                 goto err;
@@ -1368,14 +1369,12 @@ image:
         if (s->pict_type == AV_PICTURE_TYPE_B || s->low_delay) {
             if ((ret = av_frame_ref(pict, s->cur_pic.ptr->f)) < 0)
                 goto err;
-            if (!v->field_mode)
-                ff_print_debug_info(s, s->cur_pic.ptr, pict);
+            ff_print_debug_info(s, s->cur_pic.ptr, pict);
             *got_frame = 1;
         } else if (s->last_pic.ptr) {
             if ((ret = av_frame_ref(pict, s->last_pic.ptr->f)) < 0)
                 goto err;
-            if (!v->field_mode)
-                ff_print_debug_info(s, s->last_pic.ptr, pict);
+            ff_print_debug_info(s, s->last_pic.ptr, pict);
             *got_frame = 1;
         }
     }

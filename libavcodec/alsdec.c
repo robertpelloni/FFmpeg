@@ -2223,10 +2223,6 @@ const FFCodec ff_als_decoder = {
     FF_CODEC_DECODE_CB(decode_frame),
     .p.priv_class   = &als_class,
     .flush          = flush,
-    .p.capabilities =
-#if FF_API_SUBFRAMES
-                      AV_CODEC_CAP_SUBFRAMES |
-#endif
-                      AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
+    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_CHANNEL_CONF,
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };

@@ -480,24 +480,18 @@ static void x8_ac_compensation(IntraX8Context *const w, const int direction,
 
         t        = T(1084); // g
         B(1, 1) += t;
-
-        w->block_last_index[0] = FFMAX(w->block_last_index[0], 7 * 8);
         break;
     case 1:
         B(0, 1) -= T(6269);
         B(0, 3) -= T(708);
         B(0, 5) -= T(172);
         B(0, 7) -= T(73);
-
-        w->block_last_index[0] = FFMAX(w->block_last_index[0], 7 * 8);
         break;
     case 2:
         B(1, 0) -= T(6269);
         B(3, 0) -= T(708);
         B(5, 0) -= T(172);
         B(7, 0) -= T(73);
-
-        w->block_last_index[0] = FFMAX(w->block_last_index[0], 7);
         break;
     }
 #undef B
@@ -599,10 +593,7 @@ static int x8_decode_intra_mb(IntraX8Context *const w, const int chroma)
 
             w->block[scantable[pos]] = level;
         } while (!final);
-
-        w->block_last_index[0] = pos;
     } else { // DC only
-        w->block_last_index[0] = 0;
         if (w->flat_dc && ((unsigned) (dc_level + 1)) < 3) { // [-1; 1]
             int32_t divide_quant = !chroma ? w->divide_quant_dc_luma
                                            : w->divide_quant_dc_chroma;
@@ -696,7 +687,6 @@ av_cold int ff_intrax8_common_init(AVCodecContext *avctx,
     w->mb_width  = mb_width;
     w->mb_height = mb_height;
     w->block = block;
-    w->block_last_index = block_last_index;
 
     // two rows, 2 blocks per cannon mb
     w->prediction_table = av_mallocz(w->mb_width * 2 * 2);

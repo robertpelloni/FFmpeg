@@ -25,7 +25,7 @@
  * Libavcodec version macros.
  */
 
-#define LIBAVCODEC_VERSION_MAJOR  61
+#define LIBAVCODEC_VERSION_MAJOR  62
 
 /**
  * FF_API_* defines may be placed below to indicate public API that will be
@@ -37,10 +37,7 @@
  * at once through the bump. This improves the git bisect-ability of the change.
  */
 
-#define FF_API_INIT_PACKET         (LIBAVCODEC_VERSION_MAJOR < 62)
-#define FF_API_SUBFRAMES           (LIBAVCODEC_VERSION_MAJOR < 62)
-#define FF_API_TICKS_PER_FRAME     (LIBAVCODEC_VERSION_MAJOR < 62)
-#define FF_API_DROPCHANGED         (LIBAVCODEC_VERSION_MAJOR < 62)
+#define FF_API_INIT_PACKET         (LIBAVCODEC_VERSION_MAJOR < 63)
 
 #define FF_API_V408_CODECID        (LIBAVCODEC_VERSION_MAJOR < 63)
 #define FF_API_CODEC_PROPS         (LIBAVCODEC_VERSION_MAJOR < 63)
@@ -55,9 +52,9 @@
 #define FF_API_MJPEG_EXTERN_HUFF   (LIBAVCODEC_VERSION_MAJOR < 63)
 
 // reminder to remove the OMX encoder on next major bump
-#define FF_CODEC_OMX               (LIBAVCODEC_VERSION_MAJOR < 62)
+#define FF_CODEC_OMX               (LIBAVCODEC_VERSION_MAJOR < 63)
 // reminder to remove Sonic Lossy/Lossless encoders on next major bump
-#define FF_CODEC_SONIC_ENC         (LIBAVCODEC_VERSION_MAJOR < 62)
+#define FF_CODEC_SONIC_ENC         (LIBAVCODEC_VERSION_MAJOR < 63)
 // reminder to remove Sonic decoder on next-next major bump
 #define FF_CODEC_SONIC_DEC         (LIBAVCODEC_VERSION_MAJOR < 63)
 

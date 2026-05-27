@@ -1155,7 +1155,7 @@ static int vorbis_floor0_decode(vorbis_context *vc,
             ff_dlog(NULL, "floor0 dec: maximum depth: %d\n", codebook.maxdepth);
             /* read temp vector */
             vec_off = get_vlc2(&vc->gb, codebook.vlc.table,
-                               codebook.nb_bits, codebook.maxdepth);
+                               codebook.nb_bits, 3);
             if (vec_off < 0)
                 return AVERROR_INVALIDDATA;
             vec_off *= codebook.dimensions;

@@ -985,8 +985,6 @@ const FFCodec ff_ ## name_ ## _encoder = {                                 \
     CODEC_LONG_NAME(long_name_),                                           \
     .p.type         = AVMEDIA_TYPE_AUDIO,                                  \
     .p.id           = id_,                                                 \
-    .p.sample_fmts  = sample_fmts_,                                        \
-    .p.ch_layouts   = ch_layouts,                                          \
     .p.capabilities = capabilities_ | AV_CODEC_CAP_DR1 |                   \
                       AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE,               \
     CODEC_SAMPLEFMTS_ARRAY(sample_fmts_),                                  \

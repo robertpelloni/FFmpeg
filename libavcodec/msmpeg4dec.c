@@ -310,7 +310,6 @@ static av_cold void msmpeg4_decode_init_static(void)
 {
     static VLCElem vlc_buf[3714 + 2694 + 1636 + 2648 + 1532 + 2488];
     VLCInitState state = VLC_INIT_STATE(vlc_buf);
-    MVTable *mv;
 
     INIT_FIRST_VLC_RL(ff_rl_table[0], 642);
     INIT_FIRST_VLC_RL(ff_rl_table[1], 1104);
@@ -336,18 +335,16 @@ static av_cold void msmpeg4_decode_init_static(void)
                           &ff_v2_mb_type[0][1], 2, 1,
                           &ff_v2_mb_type[0][0], 2, 1, 0);
 
-    mv = &ff_mv_tables[0];
-    mv->vlc = ff_vlc_init_tables_sparse(&state, MV_VLC_BITS,
-                                        MSMPEG4_MV_TABLES_NB_ELEMS + 1,
-                                        mv->table_mv_bits, 1, 1,
-                                        mv->table_mv_code, 2, 2,
-                                        NULL, 0, 0, 0);
-    mv = &ff_mv_tables[1];
-    mv->vlc = ff_vlc_init_tables_sparse(&state, MV_VLC_BITS,
-                                        MSMPEG4_MV_TABLES_NB_ELEMS + 1,
-                                        mv->table_mv_bits, 1, 1,
-                                        mv->table_mv_code, 2, 2,
-                                        NULL, 0, 0, 0);
+    mv_tables[0] = ff_vlc_init_tables_from_lengths(&state, MV_VLC_BITS,
+                                                   MSMPEG4_MV_TABLES_NB_ELEMS,
+                                                   ff_msmp4_mv_table0_lens, 1,
+                                                   ff_msmp4_mv_table0, 2, 2,
+                                                   0, 0);
+    mv_tables[1] = ff_vlc_init_tables_from_lengths(&state, MV_VLC_BITS,
+                                                   MSMPEG4_MV_TABLES_NB_ELEMS,
+                                                   ff_msmp4_mv_table1_lens, 1,
+                                                   ff_msmp4_mv_table1, 2, 2,
+                                                   0, 0);
 
     for (unsigned i = 0; i < 4; i++) {
         ff_mb_non_intra_vlc[i] =
@@ -420,10 +417,10 @@ static int msmpeg4_decode_picture_header(H263DecContext *const h)
         switch (h->c.msmpeg4_version) {
         case MSMP4_V1:
         case MSMP4_V2:
-            s->rl_chroma_table_index = 2;
-            s->rl_table_index = 2;
+            ms->rl_chroma_table_index = 2;
+            ms->rl_table_index = 2;
 
-            s->dc_table_index = 0; //not used
+            ms->dc_table_index = 0; //not used
             break;
         case MSMP4_V3:
             ms->rl_chroma_table_index = decode012(&h->gb);
@@ -523,8 +520,8 @@ static int msmpeg4_decode_picture_header(H263DecContext *const h)
     ff_dlog(h->c.avctx, "%d %d %d %d %d\n", h->c.pict_type, ms->bit_rate,
             h->c.inter_intra_pred, h->c.width, h->c.height);
 
-    s->esc3_level_length= 0;
-    s->esc3_run_length= 0;
+    ms->esc3_level_length = 0;
+    ms->esc3_run_length   = 0;
 
     return 0;
 }
@@ -558,7 +555,7 @@ int ff_msmpeg4_decode_ext_header(H263DecContext *const h, int buf_size)
     return 0;
 }
 
-static int msmpeg4_decode_dc(MpegEncContext * s, int n, int *dir_ptr)
+static int msmpeg4_decode_dc(MSMP4DecContext *const ms, int n, int *dir_ptr)
 {
     H263DecContext *const h = &ms->h;
     int level, pred;
@@ -612,7 +609,7 @@ static int msmpeg4_decode_dc(MpegEncContext * s, int n, int *dir_ptr)
     return level;
 }
 
-int ff_msmpeg4_decode_block(MpegEncContext * s, int16_t * block,
+int ff_msmpeg4_decode_block(MSMP4DecContext *const ms, int16_t * block,
                               int n, int coded, const uint8_t *scan_table)
 {
     H263DecContext *const h = &ms->h;
@@ -627,7 +624,7 @@ int ff_msmpeg4_decode_block(MpegEncContext * s, int16_t * block,
         qadd=0;
 
         /* DC coef */
-        level = msmpeg4_decode_dc(s, n, &dc_pred_dir);
+        level = msmpeg4_decode_dc(ms, n, &dc_pred_dir);
 
         if (level < 0){
             av_log(h->c.avctx, AV_LOG_ERROR, "dc overflow- block: %d qscale: %d//\n", n, h->c.qscale);
@@ -669,7 +666,7 @@ int ff_msmpeg4_decode_block(MpegEncContext * s, int16_t * block,
         qmul = h->c.qscale << 1;
         qadd = (h->c.qscale - 1) | 1;
         i = -1;
-        rl = &ff_rl_table[3 + s->rl_table_index];
+        rl = &ff_rl_table[3 + ms->rl_table_index];
 
         if (h->c.msmpeg4_version == MSMP4_V2)
             run_diff = 0;
@@ -802,7 +799,7 @@ int ff_msmpeg4_decode_block(MpegEncContext * s, int16_t * block,
     return 0;
 }
 
-void ff_msmpeg4_decode_motion(MpegEncContext *s, int *mx_ptr, int *my_ptr)
+void ff_msmpeg4_decode_motion(MSMP4DecContext *const ms, int *mx_ptr, int *my_ptr)
 {
     const VLCElem *const mv_vlc = mv_tables[ms->mv_table_index];
     H263DecContext *const h = &ms->h;
@@ -882,7 +879,7 @@ const FFCodec ff_msmpeg4v1_decoder = {
     CODEC_LONG_NAME("MPEG-4 part 2 Microsoft variant version 1"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_MSMPEG4V1,
-    .priv_data_size = sizeof(MpegEncContext),
+    .priv_data_size = sizeof(MSMP4DecContext),
     .init           = ff_msmpeg4_decode_init,
     FF_CODEC_DECODE_CB(ff_h263_decode_frame),
     .close          = ff_mpv_decode_close,
@@ -897,7 +894,7 @@ const FFCodec ff_msmpeg4v2_decoder = {
     CODEC_LONG_NAME("MPEG-4 part 2 Microsoft variant version 2"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_MSMPEG4V2,
-    .priv_data_size = sizeof(MpegEncContext),
+    .priv_data_size = sizeof(MSMP4DecContext),
     .init           = ff_msmpeg4_decode_init,
     FF_CODEC_DECODE_CB(ff_h263_decode_frame),
     .close          = ff_mpv_decode_close,
@@ -912,7 +909,7 @@ const FFCodec ff_msmpeg4v3_decoder = {
     CODEC_LONG_NAME("MPEG-4 part 2 Microsoft variant version 3"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_MSMPEG4V3,
-    .priv_data_size = sizeof(MpegEncContext),
+    .priv_data_size = sizeof(MSMP4DecContext),
     .init           = ff_msmpeg4_decode_init,
     FF_CODEC_DECODE_CB(ff_h263_decode_frame),
     .close          = ff_mpv_decode_close,
@@ -927,7 +924,7 @@ const FFCodec ff_wmv1_decoder = {
     CODEC_LONG_NAME("Windows Media Video 7"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_WMV1,
-    .priv_data_size = sizeof(MpegEncContext),
+    .priv_data_size = sizeof(MSMP4DecContext),
     .init           = ff_msmpeg4_decode_init,
     FF_CODEC_DECODE_CB(ff_h263_decode_frame),
     .close          = ff_mpv_decode_close,

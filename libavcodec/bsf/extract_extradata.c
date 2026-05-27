@@ -481,7 +481,7 @@ static int extract_extradata_lcevc(AVBSFContext *ctx, AVPacket *pkt,
             av_buffer_unref(&pkt->buf);
             pkt->buf  = filtered_buf;
             pkt->data = filtered_buf->data;
-            pkt->size = bytestream2_tell_p(&pb_filtered_data);
+            pkt->size = filtered_size;
         }
     }
 

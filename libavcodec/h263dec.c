@@ -41,9 +41,10 @@
 #include "mpeg_er.h"
 #include "mpeg4video.h"
 #include "mpeg4videodec.h"
-#include "mpeg4videodefs.h"
 #include "mpegvideo.h"
+#include "mpegvideodata.h"
 #include "mpegvideodec.h"
+#include "mpegvideo_unquantize.h"
 #include "msmpeg4dec.h"
 #include "thread.h"
 #include "wmv2dec.h"
@@ -128,9 +129,6 @@ av_cold int ff_h263_decode_init(AVCodecContext *avctx)
         h->decode_header = ff_h263_decode_picture_header;
         break;
     case AV_CODEC_ID_MPEG4:
-        // dct_unquantize_inter is only used with MPEG-2 quantizers,
-        // so we can already set dct_unquantize_inter here once and for all.
-        s->dct_unquantize_inter = s->dct_unquantize_mpeg2_inter;
         break;
     case AV_CODEC_ID_MSMPEG4V1:
         s->h263_pred       = 1;
@@ -448,6 +446,7 @@ int ff_h263_decode_frame(AVCodecContext *avctx, AVFrame *pict,
     int buf_size       = avpkt->size;
     int ret;
     int slice_ret = 0;
+    int bak_width, bak_height;
 
     /* no supplementary picture */
     if (buf_size == 0) {
@@ -492,7 +491,7 @@ int ff_h263_decode_frame(AVCodecContext *avctx, AVFrame *pict,
         }
     }
     if (ret == FRAME_SKIPPED)
-        return get_consumed_bytes(s, buf_size);
+        return buf_size;
 
     /* skip if the header was thrashed */
     if (ret < 0) {
@@ -515,11 +514,6 @@ int ff_h263_decode_frame(AVCodecContext *avctx, AVFrame *pict,
         ff_mpeg4_workaround_bugs(avctx);
         if (h->c.studio_profile != (h->c.idsp.idct == NULL))
             ff_mpv_idct_init(s);
-        if (s->mpeg_quant) {
-            s->dct_unquantize_intra = s->dct_unquantize_mpeg2_intra;
-        } else {
-            s->dct_unquantize_intra = s->dct_unquantize_h263_intra;
-        }
     }
 #endif
 
@@ -556,7 +550,7 @@ int ff_h263_decode_frame(AVCodecContext *avctx, AVFrame *pict,
         (avctx->skip_frame >= AVDISCARD_NONKEY &&
          h->c.pict_type != AV_PICTURE_TYPE_I)    ||
         avctx->skip_frame >= AVDISCARD_ALL)
-        return get_consumed_bytes(s, buf_size);
+        return buf_size;
 
     if ((ret = ff_mpv_frame_start(s, avctx)) < 0)
         return ret;
@@ -618,7 +612,6 @@ int ff_h263_decode_frame(AVCodecContext *avctx, AVFrame *pict,
             ff_msmpeg4_decode_ext_header(h, buf_size) < 0)
             h->c.er.error_status_table[h->c.mb_num - 1] = ER_MB_ERROR;
 
-    av_assert1(s->bitstream_buffer_size == 0);
 frame_end:
     if (!h->c.studio_profile)
         ff_er_frame_end(&h->c.er, NULL);
@@ -665,7 +658,7 @@ frame_end:
     if (slice_ret < 0 && (avctx->err_recognition & AV_EF_EXPLODE))
         return slice_ret;
     else
-        return get_consumed_bytes(s, buf_size);
+        return buf_size;
 }
 
 static const AVCodecHWConfigInternal *const h263_hw_config_list[] = {

@@ -30,7 +30,6 @@
 #   undef pixel4
 #   undef dctcoef
 #   undef idctin
-#   undef INIT_CLIP
 #   undef no_rnd_avg_pixel4
 #   undef rnd_avg_pixel4
 #   undef AV_RN2P
@@ -66,7 +65,6 @@
 #   define idctin int16_t
 #endif
 
-#   define INIT_CLIP
 #   define no_rnd_avg_pixel4 no_rnd_avg64
 #   define    rnd_avg_pixel4    rnd_avg64
 #   define AV_RN2P  AV_RN32
@@ -87,7 +85,6 @@
 #   define dctcoef int16_t
 #   define idctin  int16_t
 
-#   define INIT_CLIP
 #   define no_rnd_avg_pixel4 no_rnd_avg32
 #   define    rnd_avg_pixel4    rnd_avg32
 #   define AV_RN2P  AV_RN16

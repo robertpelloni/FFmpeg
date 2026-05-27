@@ -96,13 +96,13 @@ av_cold void ff_mpv_idct_init(MpegEncContext *s)
     }
 }
 
-int ff_mpv_init_duplicate_contexts(MpegEncContext *s)
+av_cold int ff_mpv_init_duplicate_contexts(MpegEncContext *s)
 {
     const int nb_slices = s->slice_context_count;
     const size_t slice_size = s->slice_ctx_size;
 
     for (int i = 1; i < nb_slices; i++) {
-        s->thread_context[i] = av_memdup(s, sizeof(MpegEncContext));
+        s->thread_context[i] = av_memdup(s, slice_size);
         if (!s->thread_context[i])
             return AVERROR(ENOMEM);
         s->thread_context[i]->start_mb_y =
@@ -116,19 +116,18 @@ int ff_mpv_init_duplicate_contexts(MpegEncContext *s)
     return 0;
 }
 
-static void free_duplicate_context(MpegEncContext *s)
+static av_cold void free_duplicate_context(MpegEncContext *s)
 {
     if (!s)
         return;
 
     av_freep(&s->sc.edge_emu_buffer);
     av_freep(&s->sc.scratchpad_buf);
-    s->me.temp = s->me.scratchpad =
     s->sc.obmc_scratchpad = NULL;
     s->sc.linesize = 0;
 }
 
-static void free_duplicate_contexts(MpegEncContext *s)
+static av_cold void free_duplicate_contexts(MpegEncContext *s)
 {
     for (int i = 1; i < s->slice_context_count; i++) {
         free_duplicate_context(s->thread_context[i]);
@@ -169,10 +168,8 @@ int ff_update_duplicate_context(MpegEncContext *dst, const MpegEncContext *src)
  * The changed fields will not depend upon the
  * prior state of the MpegEncContext.
  */
-void ff_mpv_common_defaults(MpegEncContext *s)
+av_cold void ff_mpv_common_defaults(MpegEncContext *s)
 {
-    s->y_dc_scale_table      =
-    s->c_dc_scale_table      = ff_mpeg1_dc_scale_table;
     s->chroma_qscale_table   = ff_default_chroma_qscale_table;
     s->progressive_frame     = 1;
     s->progressive_sequence  = 1;
@@ -181,17 +178,17 @@ void ff_mpv_common_defaults(MpegEncContext *s)
     s->slice_context_count   = 1;
 }
 
-static void free_buffer_pools(BufferPoolContext *pools)
+static av_cold void free_buffer_pools(BufferPoolContext *pools)
 {
-    ff_refstruct_pool_uninit(&pools->mbskip_table_pool);
-    ff_refstruct_pool_uninit(&pools->qscale_table_pool);
-    ff_refstruct_pool_uninit(&pools->mb_type_pool);
-    ff_refstruct_pool_uninit(&pools->motion_val_pool);
-    ff_refstruct_pool_uninit(&pools->ref_index_pool);
+    av_refstruct_pool_uninit(&pools->mbskip_table_pool);
+    av_refstruct_pool_uninit(&pools->qscale_table_pool);
+    av_refstruct_pool_uninit(&pools->mb_type_pool);
+    av_refstruct_pool_uninit(&pools->motion_val_pool);
+    av_refstruct_pool_uninit(&pools->ref_index_pool);
     pools->alloc_mb_height = pools->alloc_mb_width = pools->alloc_mb_stride = 0;
 }
 
-int ff_mpv_init_context_frame(MpegEncContext *s)
+av_cold int ff_mpv_init_context_frame(MpegEncContext *s)
 {
     int nb_slices = (HAVE_THREADS &&
                      s->avctx->active_thread_type & FF_THREAD_SLICE) ?
@@ -260,7 +257,7 @@ int ff_mpv_init_context_frame(MpegEncContext *s)
     s->mb_index2xy[s->mb_height * s->mb_width] = (s->mb_height - 1) * s->mb_stride + s->mb_width; // FIXME really needed?
 
 #define ALLOC_POOL(name, size, flags) do { \
-    pools->name ##_pool = ff_refstruct_pool_alloc((size), (flags)); \
+    pools->name ##_pool = av_refstruct_pool_alloc((size), (flags)); \
     if (!pools->name ##_pool) \
         return AVERROR(ENOMEM); \
 } while (0)
@@ -281,7 +278,7 @@ int ff_mpv_init_context_frame(MpegEncContext *s)
         }
         if (s->codec_id == AV_CODEC_ID_MPEG4) {
             ALLOC_POOL(mbskip_table, mb_array_size + 2,
-                       !s->encoding ? FF_REFSTRUCT_POOL_FLAG_ZERO_EVERY_TIME : 0);
+                       !s->encoding ? AV_REFSTRUCT_POOL_FLAG_ZERO_EVERY_TIME : 0);
             if (!s->encoding) {
                 /* cbp, pred_dir */
                 if (!(s->cbp_table      = av_mallocz(mb_array_size)) ||
@@ -344,7 +341,7 @@ int ff_mpv_init_context_frame(MpegEncContext *s)
         /* FIXME: The output of H.263 with OBMC depends upon
          * the earlier content of the buffer; therefore we set
          * the flags to always reset returned buffers here. */
-        ALLOC_POOL(motion_val, mv_size, FF_REFSTRUCT_POOL_FLAG_ZERO_EVERY_TIME);
+        ALLOC_POOL(motion_val, mv_size, AV_REFSTRUCT_POOL_FLAG_ZERO_EVERY_TIME);
         ALLOC_POOL(ref_index, ref_index_size, 0);
     }
 #undef ALLOC_POOL
@@ -402,7 +399,7 @@ av_cold int ff_mpv_common_init(MpegEncContext *s)
     return ret;
 }
 
-void ff_mpv_free_context_frame(MpegEncContext *s)
+av_cold void ff_mpv_free_context_frame(MpegEncContext *s)
 {
     free_duplicate_contexts(s);
 
@@ -428,14 +425,11 @@ void ff_mpv_free_context_frame(MpegEncContext *s)
     s->linesize = s->uvlinesize = 0;
 }
 
-void ff_mpv_common_end(MpegEncContext *s)
+av_cold void ff_mpv_common_end(MpegEncContext *s)
 {
     ff_mpv_free_context_frame(s);
     if (s->slice_context_count > 1)
         s->slice_context_count = 1;
-
-    av_freep(&s->bitstream_buffer);
-    s->allocated_bitstream_buffer_size = 0;
 
     ff_mpv_unref_picture(&s->last_pic);
     ff_mpv_unref_picture(&s->cur_pic);

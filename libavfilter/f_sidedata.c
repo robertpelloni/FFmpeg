@@ -182,7 +182,6 @@ const FFFilter ff_af_asidedata = {
     .p.flags       = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC |
                      AVFILTER_FLAG_METADATA_ONLY,
     .priv_size     = sizeof(SideDataContext),
-    .priv_class    = &asidedata_class,
     .init          = init,
     FILTER_INPUTS(ainputs),
     FILTER_OUTPUTS(aoutputs),
@@ -217,7 +216,6 @@ const FFFilter ff_vf_sidedata = {
     .p.flags       = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC |
                      AVFILTER_FLAG_METADATA_ONLY,
     .priv_size   = sizeof(SideDataContext),
-    .priv_class  = &sidedata_class,
     .init        = init,
     FILTER_INPUTS(inputs),
     FILTER_OUTPUTS(outputs),

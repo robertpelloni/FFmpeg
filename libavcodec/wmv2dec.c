@@ -393,7 +393,7 @@ static av_cold int decode_ext_header(AVCodecContext *avctx, WMV2DecContext *w)
     init_get_bits(&gb, avctx->extradata, 32);
 
     fps                 = get_bits(&gb, 5);
-    s->bit_rate         = get_bits(&gb, 11) * 1024;
+    w->ms.bit_rate      = get_bits(&gb, 11) * 1024;
     w->mspel_bit        = get_bits1(&gb);
     h->loop_filter      = get_bits1(&gb);
     w->abt_flag         = get_bits1(&gb);
@@ -466,7 +466,7 @@ int ff_wmv2_decode_secondary_picture_header(H263DecContext *const h)
             if (w->per_mb_rl_bit)
                 w->ms.per_mb_rl_table = get_bits1(&h->gb);
             else
-                s->per_mb_rl_table = 0;
+                w->ms.per_mb_rl_table = 0;
 
             if (!w->ms.per_mb_rl_table) {
                 w->ms.rl_chroma_table_index = decode012(&h->gb);
@@ -516,7 +516,7 @@ int ff_wmv2_decode_secondary_picture_header(H263DecContext *const h)
         if (w->per_mb_rl_bit)
             w->ms.per_mb_rl_table = get_bits1(&h->gb);
         else
-            s->per_mb_rl_table = 0;
+            w->ms.per_mb_rl_table = 0;
 
         if (!w->ms.per_mb_rl_table) {
             w->ms.rl_table_index        = decode012(&h->gb);
@@ -543,8 +543,8 @@ int ff_wmv2_decode_secondary_picture_header(H263DecContext *const h)
                    h->c.inter_intra_pred);
         }
     }
-    s->esc3_level_length = 0;
-    s->esc3_run_length   = 0;
+    w->ms.esc3_level_length = 0;
+    w->ms.esc3_run_length   = 0;
 
     if (w->j_type) {
         ff_intrax8_decode_picture(&w->x8, h->c.cur_pic.ptr,
@@ -565,7 +565,7 @@ static inline void wmv2_decode_motion(WMV2DecContext *w, int *mx_ptr, int *my_pt
 {
     H263DecContext *const h = &w->ms.h;
 
-    ff_msmpeg4_decode_motion(s, mx_ptr, my_ptr);
+    ff_msmpeg4_decode_motion(&w->ms, mx_ptr, my_ptr);
 
     if ((((*mx_ptr) | (*my_ptr)) & 1) && h->c.mspel)
         w->hshift = get_bits1(&h->gb);
@@ -638,13 +638,17 @@ static inline int wmv2_decode_inter_block(WMV2DecContext *w, int16_t *block,
 
         sub_cbp = sub_cbp_table[decode012(&h->gb)];
 
-        if (sub_cbp & 1)
-            if ((ret = ff_msmpeg4_decode_block(s, block, n, 1, scantable)) < 0)
+        if (sub_cbp & 1) {
+            ret = ff_msmpeg4_decode_block(&w->ms, block, n, 1, scantable);
+            if (ret < 0)
                 return ret;
+        }
 
-        if (sub_cbp & 2)
-            if ((ret = ff_msmpeg4_decode_block(s, w->abt_block2[n], n, 1, scantable)) < 0)
+        if (sub_cbp & 2) {
+            ret = ff_msmpeg4_decode_block(&w->ms, w->abt_block2[n], n, 1, scantable);
+            if (ret < 0)
                 return ret;
+        }
 
         h->c.block_last_index[n] = 63;
 

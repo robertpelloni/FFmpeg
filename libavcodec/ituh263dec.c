@@ -1357,7 +1357,6 @@ int ff_h263_decode_picture_header(H263DecContext *const h)
             return -1;
         }
     }
-    s->f_code = 1;
 
     if (h->c.pict_type == AV_PICTURE_TYPE_B)
         h->c.low_delay = 0;

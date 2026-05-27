@@ -102,12 +102,6 @@ static const char *const var_names[] = {
     "x",
     "y",
     "pict_type",
-#if FF_API_FRAME_PKT
-    "pkt_pos",
-#endif
-#if FF_API_FRAME_PKT
-    "pkt_size",
-#endif
     "duration",
     NULL
 };
@@ -150,12 +144,6 @@ enum var_name {
     VAR_X,
     VAR_Y,
     VAR_PICT_TYPE,
-#if FF_API_FRAME_PKT
-    VAR_PKT_POS,
-#endif
-#if FF_API_FRAME_PKT
-    VAR_PKT_SIZE,
-#endif
     VAR_DURATION,
     VAR_VARS_NB
 };
@@ -1230,6 +1218,7 @@ static int command(AVFilterContext *ctx, const char *cmd, const char *arg, char 
 
         ctx->priv = old;
         uninit(ctx);
+        av_opt_free(old);
         av_freep(&old);
 
         ctx->priv = new;
@@ -1885,12 +1874,6 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
         NAN : frame->pts * av_q2d(inlink->time_base);
 
     s->var_values[VAR_PICT_TYPE] = frame->pict_type;
-#if FF_API_FRAME_PKT
-FF_DISABLE_DEPRECATION_WARNINGS
-    s->var_values[VAR_PKT_POS] = frame->pkt_pos;
-    s->var_values[VAR_PKT_SIZE] = frame->pkt_size;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
     s->var_values[VAR_DURATION] = frame->duration * av_q2d(inlink->time_base);
 
     s->metadata = frame->metadata;
@@ -1926,16 +1909,16 @@ static const AVFilterPad avfilter_vf_drawtext_inputs[] = {
     },
 };
 
-const AVFilter ff_vf_drawtext = {
-    .name          = "drawtext",
-    .description   = NULL_IF_CONFIG_SMALL("Draw text on top of video frames using libfreetype library."),
+const FFFilter ff_vf_drawtext = {
+    .p.name        = "drawtext",
+    .p.description = NULL_IF_CONFIG_SMALL("Draw text on top of video frames using libfreetype library."),
+    .p.priv_class  = &drawtext_class,
+    .p.flags       = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
     .priv_size     = sizeof(DrawTextContext),
-    .priv_class    = &drawtext_class,
     .init          = init,
     .uninit        = uninit,
     FILTER_INPUTS(avfilter_vf_drawtext_inputs),
     FILTER_OUTPUTS(ff_video_default_filterpad),
     FILTER_QUERY_FUNC2(query_formats),
     .process_command = command,
-    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };

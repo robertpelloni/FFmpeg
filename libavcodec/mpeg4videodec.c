@@ -36,6 +36,7 @@
 #include "mpegvideo.h"
 #include "mpegvideodata.h"
 #include "mpegvideodec.h"
+#include "mpegvideo_unquantize.h"
 #include "mpeg4video.h"
 #include "mpeg4videodata.h"
 #include "mpeg4videodec.h"
@@ -48,6 +49,12 @@
 #include "qpeldsp.h"
 #include "threadprogress.h"
 #include "unary.h"
+
+#if 0 //3IV1 is quite rare and it slows things down a tiny bit
+#define IS_3IV1 (s->codec_tag == AV_RL32("3IV1"))
+#else
+#define IS_3IV1 0
+#endif
 
 /* The defines below define the number of bits that are read at once for
  * reading vlc values. Changing these may improve speed and data cache needs
@@ -975,7 +982,7 @@ static inline int mpeg4_get_level_dc(MpegEncContext *s, int n, int pred, int lev
  */
 static inline int mpeg4_decode_dc(H263DecContext *const h, int n, int *dir_ptr)
 {
-    int level, code;
+    int level, code, pred;
 
     if (n < 4)
         code = get_vlc2(&h->gb, dc_lum, DC_VLC_BITS, 1);
@@ -3269,8 +3276,7 @@ static int decode_vop_header(Mpeg4DecContext *ctx, GetBitContext *gb,
                 ctx->f_code = 1;
                 return AVERROR_INVALIDDATA;  // makes no sense to continue, as there is nothing left from the image then
             }
-        } else
-            s->f_code = 1;
+        }
 
         if (h->c.pict_type == AV_PICTURE_TYPE_B) {
             ctx->b_code = get_bits(gb, 3);
@@ -3280,8 +3286,7 @@ static int decode_vop_header(Mpeg4DecContext *ctx, GetBitContext *gb,
                 ctx->b_code=1;
                 return AVERROR_INVALIDDATA; // makes no sense to continue, as the MV decoding will break very quickly
             }
-        } else
-            s->b_code = 1;
+        }
 
         if (h->c.avctx->debug & FF_DEBUG_PICT_INFO) {
             av_log(h->c.avctx, AV_LOG_DEBUG,
@@ -3432,8 +3437,8 @@ static int decode_studiovisualobject(Mpeg4DecContext *ctx, GetBitContext *gb)
  *         FRAME_SKIPPED if a not coded VOP is found
  *         0 else
  */
-int ff_mpeg4_decode_picture_header(Mpeg4DecContext *ctx, GetBitContext *gb,
-                                   int header, int parse_only)
+int ff_mpeg4_parse_picture_header(Mpeg4DecContext *ctx, GetBitContext *gb,
+                                  int header, int parse_only)
 {
     MPVContext *const s = &ctx->h.c;
     unsigned startcode, v;
@@ -3783,6 +3788,8 @@ int ff_mpeg4_frame_end(AVCodecContext *avctx, const AVPacket *pkt)
     if (h->divx_packed) {
         int current_pos     = ctx->bitstream_buffer && h->gb.buffer == ctx->bitstream_buffer->data ? 0 : (get_bits_count(&h->gb) >> 3);
         int startcode_found = 0;
+        uint8_t *buf = pkt->data;
+        int buf_size = pkt->size;
 
         if (buf_size - current_pos > 7) {
 
@@ -3805,16 +3812,12 @@ int ff_mpeg4_frame_end(AVCodecContext *avctx, const AVPacket *pkt)
                        "Consider using the mpeg4_unpack_bframes bitstream filter without encoding but stream copy to fix it.\n");
                 ctx->showed_packed_warning = 1;
             }
-            av_fast_padded_malloc(&s->bitstream_buffer,
-                           &s->allocated_bitstream_buffer_size,
-                           buf_size - current_pos);
-            if (!s->bitstream_buffer) {
-                s->bitstream_buffer_size = 0;
-                return AVERROR(ENOMEM);
-            }
-            memcpy(s->bitstream_buffer, buf + current_pos,
-                   buf_size - current_pos);
-            s->bitstream_buffer_size = buf_size - current_pos;
+            ret = av_buffer_replace(&ctx->bitstream_buffer, pkt->buf);
+            if (ret < 0)
+                return ret;
+
+            ctx->bitstream_buffer->data = buf + current_pos;
+            ctx->bitstream_buffer->size = buf_size - current_pos;
         }
     }
 
@@ -4037,7 +4040,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
         GetBitContext gb;
 
         if (init_get_bits8(&gb, avctx->extradata, avctx->extradata_size) >= 0)
-            ff_mpeg4_decode_picture_header(ctx, &gb, 1, 0);
+            ff_mpeg4_parse_picture_header(ctx, &gb, 1, 0);
     }
 
     return 0;
@@ -4083,12 +4086,12 @@ const FFCodec ff_mpeg4_decoder = {
     .priv_data_size        = sizeof(Mpeg4DecContext),
     .init                  = decode_init,
     FF_CODEC_DECODE_CB(ff_h263_decode_frame),
-    .close                 = ff_mpv_decode_close,
+    .close                 = mpeg4_close,
     .p.capabilities        = AV_CODEC_CAP_DRAW_HORIZ_BAND | AV_CODEC_CAP_DR1 |
                              AV_CODEC_CAP_DELAY | AV_CODEC_CAP_FRAME_THREADS,
     .caps_internal         = FF_CODEC_CAP_INIT_CLEANUP |
                              FF_CODEC_CAP_SKIP_FRAME_FILL_PARAM,
-    .flush                 = ff_mpeg_flush,
+    .flush                 = mpeg4_flush,
     .p.max_lowres          = 3,
     .p.profiles            = NULL_IF_CONFIG_SMALL(ff_mpeg4_video_profiles),
     UPDATE_THREAD_CONTEXT(mpeg4_update_thread_context),

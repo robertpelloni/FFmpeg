@@ -26,6 +26,9 @@
 
 #include <time.h>
 
+#include "libavcodec/bytestream.h"
+#include "libavcodec/tiff.h"
+#include "libavcodec/tiff_common.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mem.h"
@@ -45,6 +48,7 @@
 
 #define MLV_AUDIO_CLASS_WAV  1
 
+#define MLV_CLASS_FLAG_LJ92  0x20
 #define MLV_CLASS_FLAG_DELTA 0x40
 #define MLV_CLASS_FLAG_LZMA  0x80
 
@@ -53,6 +57,9 @@ typedef struct {
     int class[2];
     int stream_index;
     uint64_t pts;
+    int black_level;
+    int white_level;
+    int color_matrix1[9][2];
 } MlvContext;
 
 static int probe(const AVProbeData *p)
@@ -86,6 +93,8 @@ static int check_file_header(AVIOContext *pb, uint64_t guid)
 static void read_string(AVFormatContext *avctx, AVIOContext *pb, const char *tag, unsigned size)
 {
     char * value = av_malloc(size + 1);
+    int ret;
+
     if (!value) {
         avio_skip(pb, size);
         return;
@@ -156,10 +165,17 @@ static int scan_file(AVFormatContext *avctx, AVStream *vst, AVStream *ast, int f
             vst->codecpar->width  = width;
             vst->codecpar->height = height;
             vst->codecpar->bits_per_coded_sample = bits_per_coded_sample;
-            avio_skip(pb, 8 + 16 + 24); // black_level, white_level, xywh, active_area, exposure_bias
+            mlv->black_level = avio_rl32(pb);
+            mlv->white_level = avio_rl32(pb);
+            avio_skip(pb, 16 + 24); // xywh, active_area, exposure_bias
             if (avio_rl32(pb) != 0x2010100) /* RGGB */
                 avpriv_request_sample(avctx, "cfa_pattern");
-            avio_skip(pb, 80); // calibration_illuminant1, color_matrix1, dynamic_range
+            avio_skip(pb, 4); // calibration_illuminant1,
+            for (int i = 0; i < 9; i++) {
+                mlv->color_matrix1[i][0] = avio_rl32(pb);
+                mlv->color_matrix1[i][1] = avio_rl32(pb);
+            }
+            avio_skip(pb, 4); // dynamic_range
             vst->codecpar->format    = AV_PIX_FMT_BAYER_RGGB16LE;
             vst->codecpar->codec_tag = MKTAG('B', 'I', 'T', 16);
             size -= 164;
@@ -249,9 +265,16 @@ static int scan_file(AVFormatContext *avctx, AVStream *vst, AVStream *ast, int f
             read_uint32(avctx, pb, "colortone", "%"PRIi32);
             read_string(avctx, pb, "picStyleName", 16);
             size -= 36;
+        } else if (type == MKTAG('V','E','R','S') && size >= 4) {
+            unsigned int length = avio_rl32(pb);
+            read_string(avctx, pb, "version", length);
+            size -= length + 4;
+        } else if (type == MKTAG('D','A','R','K')) {
+        } else if (type == MKTAG('D','I','S','O')) {
         } else if (type == MKTAG('M','A','R','K')) {
         } else if (type == MKTAG('N','U','L','L')) {
         } else if (type == MKTAG('M','L','V','I')) { /* occurs when MLV and Mnn files are concatenated */
+        } else if (type == MKTAG('R','A','W','C')) {
         } else {
             av_log(avctx, AV_LOG_INFO, "unsupported tag %s, size %u\n",
                    av_fourcc2str(type), size);
@@ -310,6 +333,9 @@ static int read_header(AVFormatContext *avctx)
             vst->codecpar->format   = AV_PIX_FMT_YUV420P;
             vst->codecpar->codec_id = AV_CODEC_ID_RAWVIDEO;
             vst->codecpar->codec_tag = 0;
+            break;
+        case MLV_CLASS_FLAG_LJ92|MLV_VIDEO_CLASS_RAW:
+            vst->codecpar->codec_id = AV_CODEC_ID_TIFF;
             break;
         case MLV_VIDEO_CLASS_JPEG:
             vst->codecpar->codec_id = AV_CODEC_ID_MJPEG;
@@ -541,19 +567,28 @@ static int read_packet(AVFormatContext *avctx, AVPacket *pkt)
     if (size < 16)
         return AVERROR_INVALIDDATA;
     avio_skip(pb, 12); //timestamp, frameNumber
-    if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+    size -= 12;
+    if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+        if (size < 8)
+            return AVERROR_INVALIDDATA;
         avio_skip(pb, 8); // cropPosX, cropPosY, panPosX, panPosY
+        size -= 8;
+    }
     space = avio_rl32(pb);
+    if (size < space + 4LL)
+        return AVERROR_INVALIDDATA;
     avio_skip(pb, space);
+    size -= space;
 
     if ((mlv->class[st->id] & (MLV_CLASS_FLAG_DELTA|MLV_CLASS_FLAG_LZMA))) {
         ret = AVERROR_PATCHWELCOME;
     } else if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-        ret = av_get_packet(pb, pkt, (st->codecpar->width * st->codecpar->height * st->codecpar->bits_per_coded_sample + 7) >> 3);
+        if (st->codecpar->codec_id == AV_CODEC_ID_TIFF)
+            ret = get_packet_lj92(avctx, st, pb, pkt, size);
+        else
+            ret = av_get_packet(pb, pkt, (st->codecpar->width * st->codecpar->height * st->codecpar->bits_per_coded_sample + 7) >> 3);
     } else { // AVMEDIA_TYPE_AUDIO
-        if (space > UINT_MAX - 24 || size < (24 + space))
-            return AVERROR_INVALIDDATA;
-        ret = av_get_packet(pb, pkt, size - (24 + space));
+        ret = av_get_packet(pb, pkt, size - 4);
     }
 
     if (ret < 0)

@@ -43,7 +43,7 @@ typedef struct XFadeVulkanContext {
 
     int                 initialized;
     FFVkExecPool        e;
-    FFVkQueueFamilyCtx  qf;
+    AVVulkanDeviceQueueFamily *qf;
     FFVulkanShader      shd;
     VkSampler           sampler;
 
@@ -95,8 +95,14 @@ static av_cold int init_vulkan(AVFilterContext *avctx)
     FFVulkanContext *vkctx = &s->vkctx;
     const int planes = av_pix_fmt_count_planes(s->vkctx.output_format);
 
-    ff_vk_qf_init(vkctx, &s->qf, VK_QUEUE_COMPUTE_BIT);
-    RET(ff_vk_exec_pool_init(vkctx, &s->qf, &s->e, s->qf.nb_queues*4, 0, 0, 0, NULL));
+    s->qf = ff_vk_qf_find(vkctx, VK_QUEUE_COMPUTE_BIT, 0);
+    if (!s->qf) {
+        av_log(avctx, AV_LOG_ERROR, "Device has no compute queues\n");
+        err = AVERROR(ENOTSUP);
+        goto fail;
+    }
+
+    RET(ff_vk_exec_pool_init(vkctx, s->qf, &s->e, s->qf->num*4, 0, 0, 0, NULL));
     RET(ff_vk_init_sampler(vkctx, &s->sampler, 1, VK_FILTER_NEAREST));
 
     SPEC_LIST_CREATE(sl, 2, 2*sizeof(int))
@@ -432,9 +438,11 @@ static const AVFilterPad xfade_vulkan_outputs[] = {
     },
 };
 
-const AVFilter ff_vf_xfade_vulkan = {
-    .name            = "xfade_vulkan",
-    .description     = NULL_IF_CONFIG_SMALL("Cross fade one video with another video."),
+const FFFilter ff_vf_xfade_vulkan = {
+    .p.name          = "xfade_vulkan",
+    .p.description   = NULL_IF_CONFIG_SMALL("Cross fade one video with another video."),
+    .p.priv_class    = &xfade_vulkan_class,
+    .p.flags         = AVFILTER_FLAG_HWDEVICE,
     .priv_size       = sizeof(XFadeVulkanContext),
     .init            = &ff_vk_filter_init,
     .uninit          = &uninit,
@@ -442,7 +450,5 @@ const AVFilter ff_vf_xfade_vulkan = {
     FILTER_INPUTS(xfade_vulkan_inputs),
     FILTER_OUTPUTS(xfade_vulkan_outputs),
     FILTER_SINGLE_PIXFMT(AV_PIX_FMT_VULKAN),
-    .priv_class      = &xfade_vulkan_class,
     .flags_internal  = FF_FILTER_FLAG_HWFRAME_AWARE,
-    .flags           = AVFILTER_FLAG_HWDEVICE,
 };

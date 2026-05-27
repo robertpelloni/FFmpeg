@@ -1168,7 +1168,9 @@ ffplay "rtmp://myserver/live/mystream live=1"
 Real-time Transport Protocol.
 
 The required syntax for an RTP URL is:
-rtp://@var{hostname}[:@var{port}][?@var{option}=@var{val}...]
+@example
+rtp://@var{hostname}[:@var{port}][?@var{options}]
+@end example
 
 @var{port} specifies the RTP port to use.
 
@@ -1223,10 +1225,6 @@ multicast groups.
 
 @item timeout=@var{n}
 Set timeout (in microseconds) of socket I/O operations to @var{n}.
-
-This is a deprecated option. Instead, @option{localrtpport} should be
-used.
-
 @end table
 
 Important notes:

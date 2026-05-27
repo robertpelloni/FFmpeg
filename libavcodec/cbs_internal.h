@@ -22,13 +22,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "config.h"
+
 #include "libavutil/log.h"
 
 #include "cbs.h"
 #include "codec_id.h"
 #include "get_bits.h"
 #include "put_bits.h"
-#include "refstruct.h"
+#include "libavutil/refstruct.h"
 
 #ifndef CBS_READ
 #define CBS_READ 1
@@ -133,7 +135,7 @@ typedef const struct CodedBitstreamUnitTypeDescriptor {
         } ref;
 
         struct {
-            void (*content_free)(FFRefStructOpaque opaque, void *content);
+            void (*content_free)(AVRefStructOpaque opaque, void *content);
             int  (*content_clone)(void **new_content, CodedBitstreamUnit *unit);
         } complex;
     } type;
@@ -195,7 +197,7 @@ typedef struct CodedBitstreamType {
 
 // Helper functions for trace output.
 
-void ff_cbs_trace_header(CodedBitstreamContext *ctx,
+void CBS_FUNC(trace_header)(CodedBitstreamContext *ctx,
                          const char *name);
 
 
@@ -205,28 +207,28 @@ void ff_cbs_trace_header(CodedBitstreamContext *ctx,
 // (i.e. only limited by the amount of bits used) and they lack
 // the ability to use subscripts.
 
-int ff_cbs_read_unsigned(CodedBitstreamContext *ctx, GetBitContext *gbc,
+int CBS_FUNC(read_unsigned)(CodedBitstreamContext *ctx, GetBitContext *gbc,
                          int width, const char *name,
                          const int *subscripts, uint32_t *write_to,
                          uint32_t range_min, uint32_t range_max);
 
-int ff_cbs_read_simple_unsigned(CodedBitstreamContext *ctx, GetBitContext *gbc,
+int CBS_FUNC(read_simple_unsigned)(CodedBitstreamContext *ctx, GetBitContext *gbc,
                                 int width, const char *name, uint32_t *write_to);
 
-int ff_cbs_write_unsigned(CodedBitstreamContext *ctx, PutBitContext *pbc,
+int CBS_FUNC(write_unsigned)(CodedBitstreamContext *ctx, PutBitContext *pbc,
                           int width, const char *name,
                           const int *subscripts, uint32_t value,
                           uint32_t range_min, uint32_t range_max);
 
-int ff_cbs_write_simple_unsigned(CodedBitstreamContext *ctx, PutBitContext *pbc,
+int CBS_FUNC(write_simple_unsigned)(CodedBitstreamContext *ctx, PutBitContext *pbc,
                                  int width, const char *name, uint32_t value);
 
-int ff_cbs_read_signed(CodedBitstreamContext *ctx, GetBitContext *gbc,
+int CBS_FUNC(read_signed)(CodedBitstreamContext *ctx, GetBitContext *gbc,
                        int width, const char *name,
                        const int *subscripts, int32_t *write_to,
                        int32_t range_min, int32_t range_max);
 
-int ff_cbs_write_signed(CodedBitstreamContext *ctx, PutBitContext *pbc,
+int CBS_FUNC(write_signed)(CodedBitstreamContext *ctx, PutBitContext *pbc,
                         int width, const char *name,
                         const int *subscripts, int32_t value,
                         int32_t range_min, int32_t range_max);
@@ -244,6 +246,7 @@ int ff_cbs_write_signed(CodedBitstreamContext *ctx, PutBitContext *pbc,
 #define MIN_INT_BITS(length) (-(INT64_C(1) << ((length) - 1)))
 
 
+#if CBS_TRACE
 // Start of a syntax element during read tracing.
 #define CBS_TRACE_READ_START() \
     GetBitContext trace_start; \
@@ -323,6 +326,17 @@ int ff_cbs_write_signed(CodedBitstreamContext *ctx, PutBitContext *pbc,
                                       name, subscripts, value); \
         } \
     } while (0)
+
+#else // CBS_TRACE
+#define CBS_TRACE_READ_START() do { } while (0)
+#define CBS_TRACE_READ_END() do { } while (0)
+#define CBS_TRACE_READ_END_NO_SUBSCRIPTS() do { } while (0)
+#define CBS_TRACE_READ_END_VALUE_ONLY() do { } while (0)
+#define CBS_TRACE_WRITE_START() do { } while (0)
+#define CBS_TRACE_WRITE_END() do { } while (0)
+#define CBS_TRACE_WRITE_END_NO_SUBSCRIPTS() do { } while (0)
+#define CBS_TRACE_WRITE_END_VALUE_ONLY() do { } while (0)
+#endif // CBS_TRACE
 
 #define TYPE_LIST(...) { __VA_ARGS__ }
 #define CBS_UNIT_TYPE_POD(type_, structure) { \

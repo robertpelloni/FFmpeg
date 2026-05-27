@@ -76,7 +76,6 @@ typedef struct IntraX8Context {
  * @param avctx pointer to AVCodecContext
  * @param w pointer to IntraX8Context
  * @param block pointer to block array
- * @param block_last_index pointer to index array
  * @param mb_width macroblock width
  * @param mb_height macroblock height
  * @return 0 on success, a negative AVERROR value on error

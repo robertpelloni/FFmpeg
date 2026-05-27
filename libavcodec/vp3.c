@@ -50,7 +50,7 @@
 #include "jpegquanttables.h"
 #include "mathops.h"
 #include "progressframe.h"
-#include "refstruct.h"
+#include "libavutil/refstruct.h"
 #include "thread.h"
 #include "videodsp.h"
 #include "vp3data.h"
@@ -369,7 +369,7 @@ static av_cold int vp3_decode_end(AVCodecContext *avctx)
     /* release all frames */
     vp3_decode_flush(avctx);
 
-    ff_refstruct_unref(&s->coeff_vlc);
+    av_refstruct_unref(&s->coeff_vlc);
 
     return 0;
 }
@@ -2346,7 +2346,7 @@ static av_cold int allocate_tables(AVCodecContext *avctx)
 }
 
 
-static av_cold void free_vlc_tables(FFRefStructOpaque unused, void *obj)
+static av_cold void free_vlc_tables(AVRefStructOpaque unused, void *obj)
 {
     CoeffVLCs *vlcs = obj;
 

@@ -444,7 +444,6 @@ const FFFilter ff_vf_chromakey_cuda = {
     .p.priv_class  = &cudachromakey_class,
     .uninit = cudachromakey_uninit,
     .priv_size = sizeof(ChromakeyCUDAContext),
-    .priv_class = &cudachromakey_class,
 
     FILTER_INPUTS(cudachromakey_inputs),
     FILTER_OUTPUTS(cudachromakey_outputs),

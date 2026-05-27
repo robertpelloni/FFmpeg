@@ -290,7 +290,7 @@ static void event_callback(LCEVC_DecoderHandle dec, LCEVC_Event event,
     }
 }
 
-static void lcevc_free(FFRefStructOpaque unused, void *obj)
+static void lcevc_free(AVRefStructOpaque unused, void *obj)
 {
     FFLCEVCContext *lcevc = obj;
     if (lcevc->initialized) {

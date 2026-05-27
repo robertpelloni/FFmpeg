@@ -217,9 +217,15 @@ static int RENAME(decode_rgb_frame)(FFV1Context *f, FFV1SliceContext *sc,
                 }
             }
 
-            if (lbd)
+            if (lbd) {
                 *((uint32_t*)(src[0] + x*4 + stride[0]*y)) = b + ((unsigned)g<<8) + ((unsigned)r<<16) + ((unsigned)a<<24);
-            else if (sizeof(TYPE) == 4 || transparency) {
+            } else if (f->avctx->bits_per_raw_sample == 32) {
+                *((uint32_t*)(src[0] + x*4 + stride[0]*y)) = g;
+                *((uint32_t*)(src[1] + x*4 + stride[1]*y)) = b;
+                *((uint32_t*)(src[2] + x*4 + stride[2]*y)) = r;
+                if (transparency)
+                    *((uint32_t*)(src[3] + x*4 + stride[3]*y)) = a;
+            } else if (sizeof(TYPE) == 4 || transparency) {
                 *((uint16_t*)(src[0] + x*2 + stride[0]*y)) = g;
                 *((uint16_t*)(src[1] + x*2 + stride[1]*y)) = b;
                 *((uint16_t*)(src[2] + x*2 + stride[2]*y)) = r;
