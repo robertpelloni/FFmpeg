@@ -1,17 +1,34 @@
-from conans import ConanFile, tools
+from conan import ConanFile
+from conan.tools.files import copy, collect_libs
 
 class conanRecipe(ConanFile):
-	name = "topaz-ffmpeg"
-	settings = ("os", "build_type", "arch")
+    name = "topaz-ffmpeg"
+    settings = "os", "build_type", "arch"
 
-	def requirements(self):
-		self.requires("videoai/0.6.19")
-		if self.settings.os == "Macos":
-		    self.requires("openh264/2.2.0")
-		    self.requires("libvpx/1.11.0")
+    def configure(self):
+        self.options["zimg"].shared = True
+        if self.settings.os == "Macos" or self.settings.os == "Linux":
+            self.options["libvpx"].shared = True
 
-	def imports(self):
-		if self.settings.os == "Windows":
-			self.copy("*")
-		if self.settings.os == "Macos":
-			self.copy("*")
+    def requirements(self):
+        self.requires("videoai/1.9.12-linux+2")
+        self.requires("zimg/3.0.5")
+        if self.settings.os == "Macos" or self.settings.os == "Linux":
+            self.requires("libvpx/1.11.0") #libvpx is static on Windows
+            self.requires("aom/3.5.0")
+            
+    def package_id(self):
+        self.info.requires["videoai"].minor_mode()
+
+    def package(self):
+        copy(
+            self,
+            "*",
+            src=self.source_folder,
+            dst=self.package_folder,
+            keep_path=True,
+        )
+
+    def layout(self):
+        self.folders.source = self.conf.get("user.profile_name")
+        self.cpp.package.libs = collect_libs(self)
