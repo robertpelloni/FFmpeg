@@ -1,0 +1,56 @@
+parameters:
+- name: os #"win", "mac"
+  type: string
+  default: "win"
+
+- name: APP_DEPS_FOLDER
+  type: string
+  default: '$(Build.SourcesDirectory)/libs'
+
+- name: SHOULD_RESTORE_CONAN_CACHE
+  type: boolean
+  default: false
+
+- name: CONAN_USER_HOME
+  type: string
+  default: '$(Pipeline.Workspace)'
+
+steps:
+
+#Install tools
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '3.x'
+
+  - ${{ if eq(parameters.os, 'mac') }}:
+    - script: |
+        /bin/bash -c "echo '##vso[task.setvariable variable=MD_APPLE_SDK_ROOT;]'/Applications/Xcode_$XCODE_VERSION.app;sudo xcode-select --switch /Applications/Xcode_$XCODE_VERSION.app/Contents/Developer"
+      displayName: 'Select XCode $(XCODE_VERSION)'
+
+  - script: |
+      python -m pip install pipenv
+    displayName: 'Install pipenv'
+
+  - bash: |
+      echo "##vso[task.setvariable variable=CONAN_USER_HOME]${{ parameters.CONAN_USER_HOME }}"
+      mkdir -p "${{ parameters.CONAN_USER_HOME }}/.conan"
+    displayName: 'Set conan cache location'
+
+  - script: |
+      python -m pip install conan
+      conan remote add topaz-zuel-copy https://topaz.jfrog.io/artifactory/api/conan/topaz-zuel-copy
+      conan remote update topaz-zuel-copy https://topaz.jfrog.io/artifactory/api/conan/topaz-zuel-copy --insert
+      conan user -p $(CONAN_PASSWORD) -r topaz-zuel-copy build.bot
+      conan search -r topaz-zuel-copy
+    displayName: 'Install conan'
+    env:
+      CONAN_PASSWORD: $(CONAN_PASSWORD)
+
+#Install Dependencies
+  - task: Cache@2
+    inputs:
+      key: 'conan | "$(Agent.OS)" | $(Build.SourcesDirectory)/FFmpeg/build-scripts/conanfile.py | $(Build.SourcesDirectory)/FFmpeg/build-scripts/deploy_conanfile.py'
+      path: '${{ parameters.CONAN_USER_HOME }}/.conan/data'
+      cacheHitVar: CONAN_CACHE_RESTORED
+    condition: and(succeeded(), eq('${{ parameters.SHOULD_RESTORE_CONAN_CACHE }}', 'true'))
+    displayName: Restore conan packages cache
