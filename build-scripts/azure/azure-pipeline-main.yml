@@ -20,9 +20,13 @@ parameters:
     type: boolean
     default: true
   - name: icx
-    displayName: 'Intel Compiler (ICX)'
+    displayName: 'Use Intel Compiler (ICX) for Windows builds?'
     type: boolean
-    default: false
+    default: true
+  - name: icx_installer_url
+    displayName: 'Intel ICX Installer URL - find from OneAPI Download Center'
+    type: string
+    default: 'https://registrationcenter-download.intel.com/akdlm/IRC_NAS/9571da11-4e65-4d27-8c30-b0f990a75571/intel-dpcpp-cpp-compiler-2025.3.2.27_offline.exe'
   - name: nv_codec_headers
     displayName: 'NV CODEC HEADERS version(tag)'
     type: string
@@ -90,6 +94,7 @@ stages:
         - template: win.yml
           parameters:
             icx: ${{ parameters.icx }}
+            icx_installer_url: ${{ parameters.icx_installer_url }}
 
   - ${{ if eq(parameters.linux, true) }}:
     - job: Ubuntu22_04
