@@ -580,7 +580,9 @@ retry:
             str[str_size] = 0;
         }
         c->fc->event_flags |= AVFMT_EVENT_FLAG_METADATA_UPDATED;
-        av_dict_set(metadata, key, str, 0);
+        if (c->itunes_metadata && av_dict_get(*metadata, key, NULL, 0))
+            av_dict_set(metadata, key, ";", AV_DICT_APPEND);
+        av_dict_set(metadata, key, str, c->itunes_metadata ? AV_DICT_APPEND : 0);
         if (*language && strcmp(language, "und")) {
             snprintf(key2, sizeof(key2), "%s-%s", key, language);
             av_dict_set(metadata, key2, str, 0);
@@ -591,6 +593,18 @@ retry:
                 c->handbrake_version = 1000000*major + 1000*minor + micro;
             }
         }
+
+        atom.size -= str_size;
+        av_freep(&str);
+
+        // Read remaining data atoms for multi-valued iTunes tags (e.g. multiple
+        // artists stored as multiple data atoms within one tag atom), consistent
+        // with the existing covr path.
+        // Note: multiple sibling tag atoms with the same key (e.g. three separate
+        // ©ART atoms under ilst) are handled by the AV_DICT_APPEND logic above,
+        // since mov_read_udta_string() is called once per tag atom.
+        if (c->itunes_metadata && atom.size > 8)
+            goto retry;
     }
 
     av_freep(&str);
@@ -2146,6 +2160,12 @@ static int mov_read_colr(MOVContext *c, AVIOContext *pb, MOVAtom atom)
                 return AVERROR(ENOMEM);
             icc_profile = sd->data;
         } else {
+            if (c->heif_icc_profile_items >= c->fc->max_streams) {
+                av_log(c->fc, AV_LOG_WARNING,
+                       "HEIF ICC profile copies exceed cap %d; ignoring further items\n",
+                       c->fc->max_streams);
+                return 0;
+            }
             av_freep(&item->icc_profile);
             icc_profile = item->icc_profile = av_malloc(atom.size - 4);
             if (!icc_profile) {
@@ -2153,6 +2173,7 @@ static int mov_read_colr(MOVContext *c, AVIOContext *pb, MOVAtom atom)
                 return AVERROR(ENOMEM);
             }
             item->icc_profile_size = atom.size - 4;
+            c->heif_icc_profile_items++;
         }
         ret = ffio_read_size(pb, icc_profile, atom.size - 4);
         if (ret < 0)
@@ -4438,7 +4459,7 @@ static void mov_fix_index(MOVContext *mov, AVStream *st)
         }
         found_non_empty_edit = 1;
 
-        // If we encounter a non-negative edit list reset the skip_samples/start_pad fields and set them
+        // If we encounter a non-negative edit list reset the skip_samples/initial_padding fields and set them
         // according to the edit list below.
         if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
             if (first_non_zero_audio_edit < 0) {
@@ -4448,7 +4469,7 @@ static void mov_fix_index(MOVContext *mov, AVStream *st)
             }
 
             if (first_non_zero_audio_edit > 0)
-                sti->skip_samples = msc->start_pad = 0;
+                sti->skip_samples = st->codecpar->initial_padding = 0;
         }
 
         // While reordering frame index according to edit list we must handle properly
@@ -4642,7 +4663,7 @@ static void mov_fix_index(MOVContext *mov, AVStream *st)
 
     // Update av stream length, if it ends up shorter than the track's media duration
     st->duration = FFMIN(st->duration, edit_list_dts_entry_end - start_dts);
-    msc->start_pad = sti->skip_samples;
+    st->codecpar->initial_padding = sti->skip_samples;
 
     // Free the old index and the old CTTS structures
     av_free(e_old);
@@ -4860,7 +4881,7 @@ static void mov_build_index(MOVContext *mov, AVStream *st)
 
         if (!multiple_edits && !mov->advanced_editlist &&
             st->codecpar->codec_id == AV_CODEC_ID_AAC && start_time > 0)
-            sc->start_pad = av_rescale_q(start_time, st->time_base,
+            st->codecpar->initial_padding = av_rescale_q(start_time, st->time_base,
                     (AVRational){1, st->codecpar->sample_rate});
     }
 
@@ -5497,12 +5518,10 @@ static int mov_read_custom(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     int i;
     int ret = 0;
     AVStream *st;
-    MOVStreamContext *sc;
 
     if (c->fc->nb_streams < 1)
         return 0;
     st = c->fc->streams[c->fc->nb_streams-1];
-    sc = st->priv_data;
 
     for (i = 0; i < 3; i++) {
         uint8_t **p;
@@ -5551,7 +5570,22 @@ static int mov_read_custom(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             int priming, remainder, samples;
             if(sscanf(val, "%*X %X %X %X", &priming, &remainder, &samples) == 3){
                 if(priming>0 && priming<16384)
-                    sc->start_pad = priming;
+                    st->codecpar->initial_padding = priming = av_rescale_q(priming, st->time_base,
+                                                                           (AVRational){ 1, st->codecpar->sample_rate });
+                if (remainder > 0) {
+                    int64_t duration = av_rescale_q(st->duration, st->time_base,
+                                                    (AVRational){ 1, st->codecpar->sample_rate });
+                    remainder = av_rescale_q(remainder, st->time_base,
+                                             (AVRational){ 1, st->codecpar->sample_rate });
+                    samples = av_rescale_q(samples, st->time_base,
+                                           (AVRational){ 1, st->codecpar->sample_rate });
+                    if (duration > remainder && duration > samples) {
+                        ffstream(st)->first_discard_sample = duration - remainder;
+                        ffstream(st)->last_discard_sample = duration;
+                    }
+                }
+                av_log(c->fc, AV_LOG_DEBUG, "Parsed iTunSMPB: priming %d, remainder %d samples %d\n",
+                       priming, remainder, samples);
             }
         }
         if (strcmp(mean, "com.apple.iTunes") == 0 &&
@@ -9500,6 +9534,12 @@ static int mov_read_ispe(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     av_log(c->fc, AV_LOG_TRACE, "ispe: item_id %d, width %"PRIu32", height %"PRIu32"\n",
            c->cur_item_id, width, height);
 
+    if (!width || !height || width > INT_MAX || height > INT_MAX) {
+        av_log(c->fc, AV_LOG_ERROR, "Invalid ispe dimensions %"PRIu32"x%"PRIu32"\n",
+               width, height);
+        return AVERROR_INVALIDDATA;
+    }
+
     item = get_heif_item(c, c->cur_item_id);
     if (item) {
         item->width  = width;
@@ -10503,8 +10543,10 @@ static int read_image_grid(AVFormatContext *s, const HEIFGrid *grid,
 {
     MOVContext *c = s->priv_data;
     const HEIFItem *item = grid->item;
+    int64_t coded_width = 0, coded_height = 0;
     int64_t offset = 0, pos = avio_tell(s->pb);
-    int x = 0, y = 0, i = 0;
+    int64_t x = 0, y = 0;
+    int i = 0;
     int tile_rows, tile_cols;
     int flags, size;
 
@@ -10546,9 +10588,15 @@ static int read_image_grid(AVFormatContext *s, const HEIFGrid *grid,
         return AVERROR_INVALIDDATA;
 
     for (int i = 0; i < tile_cols; i++)
-        tile_grid->coded_width  += grid->tile_item_list[i]->width;
+        coded_width  += grid->tile_item_list[i]->width;
     for (int i = 0; i < size; i += tile_cols)
-        tile_grid->coded_height += grid->tile_item_list[i]->height;
+        coded_height += grid->tile_item_list[i]->height;
+
+    if (coded_width > INT_MAX || coded_height > INT_MAX)
+        return AVERROR_INVALIDDATA;
+
+    tile_grid->coded_width  = coded_width;
+    tile_grid->coded_height = coded_height;
 
     tile_grid->offsets = av_calloc(tile_grid->nb_tiles, sizeof(*tile_grid->offsets));
     if (!tile_grid->offsets)
@@ -11272,7 +11320,7 @@ static int mov_read_header(AVFormatContext *s)
 
         if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO &&
             st->codecpar->codec_id   == AV_CODEC_ID_AAC) {
-            sti->skip_samples = sc->start_pad;
+            sti->skip_samples = st->codecpar->initial_padding;
         }
         if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && sc->nb_frames_for_fps > 0 && sc->duration_for_fps > 0)
             av_reduce(&st->avg_frame_rate.num, &st->avg_frame_rate.den,
@@ -11578,6 +11626,7 @@ static int get_eia608_packet(AVIOContext *pb, AVPacket *pkt, int src_size)
 static int mov_finalize_packet(AVFormatContext *s, AVStream *st, AVIndexEntry *sample,
                                 int64_t current_index, AVPacket *pkt)
 {
+    MOVContext *mov = s->priv_data;
     MOVStreamContext *sc = st->priv_data;
 
     pkt->stream_index = sc->ffindex;
@@ -11597,6 +11646,22 @@ static int mov_finalize_packet(AVFormatContext *s, AVStream *st, AVIndexEntry *s
                 pkt->duration = next_dts - pkt->dts;
         }
         pkt->pts = pkt->dts;
+    }
+
+    if (st->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && !mov->fragment.found_tfhd &&
+        sc->current_sample >= ffstream(st)->nb_index_entries) {
+        int64_t pts   = av_rescale_q(pkt->pts,     st->time_base, (AVRational){ 1, st->codecpar->sample_rate });
+        int64_t total = av_rescale_q(st->duration, st->time_base, (AVRational){ 1, st->codecpar->sample_rate });
+        int64_t duration = pkt->duration;
+
+        if (av_sat_add64(pkt->pts, pkt->duration) > st->duration)
+            duration = st->duration - pkt->pts;
+        duration = av_rescale_q(duration, st->time_base, (AVRational){ 1, st->codecpar->sample_rate });
+
+        if (!ffstream(st)->first_discard_sample)
+            ffstream(st)->first_discard_sample = av_sat_add64(pts, duration);
+        if (!ffstream(st)->last_discard_sample)
+            ffstream(st)->last_discard_sample  = total;
     }
 
     if (sc->tts_data && sc->tts_index < sc->tts_count) {
@@ -11755,12 +11820,15 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
         }
 #endif
         else if (st->codecpar->codec_id == AV_CODEC_ID_APV && sample->size > 4) {
-            const uint32_t au_size = avio_rb32(sc->pb);
+            uint32_t au_size = avio_rb32(sc->pb);
+            int explode = !!(mov->fc->error_recognition & AV_EF_EXPLODE);
             if (au_size > sample->size - 4) {
-                av_log(s, AV_LOG_ERROR,
+                av_log(s, explode ? AV_LOG_ERROR : AV_LOG_WARNING,
                        "APV au_size %u exceeds sample body %d\n",
                        au_size, sample->size - 4);
-                return AVERROR_INVALIDDATA;
+                if (explode)
+                    return AVERROR_INVALIDDATA;
+                au_size = sample->size - 4;
             }
             ret = av_get_packet(sc->pb, pkt, au_size);
         } else
@@ -11957,7 +12025,6 @@ static int mov_seek_stream(AVFormatContext *s, AVStream *st, int64_t timestamp, 
 
 static int64_t mov_get_skip_samples(AVStream *st, int sample)
 {
-    MOVStreamContext *sc = st->priv_data;
     FFStream *const sti = ffstream(st);
     int64_t first_ts = sti->index_entries[0].timestamp;
     int64_t ts = sti->index_entries[sample].timestamp;
@@ -11966,10 +12033,10 @@ static int64_t mov_get_skip_samples(AVStream *st, int sample)
     if (st->codecpar->codec_type != AVMEDIA_TYPE_AUDIO)
         return 0;
 
-    /* compute skip samples according to stream start_pad, seek ts and first ts */
+    /* compute skip samples according to stream initial_padding, seek ts and first ts */
     off = av_rescale_q(ts - first_ts, st->time_base,
                        (AVRational){1, st->codecpar->sample_rate});
-    return FFMAX(sc->start_pad - off, 0);
+    return FFMAX(st->codecpar->initial_padding - off, 0);
 }
 
 static int mov_read_seek(AVFormatContext *s, int stream_index, int64_t sample_time, int flags)

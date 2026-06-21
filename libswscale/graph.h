@@ -27,7 +27,7 @@
 #include "libavutil/buffer.h"
 
 #include "swscale.h"
-#include "utils.h"
+#include "format.h"
 
 static av_always_inline av_const int ff_fmt_vshift(enum AVPixelFormat fmt, int plane)
 {
@@ -81,8 +81,9 @@ struct SwsPass {
      * are always equal to (or smaller than, for the last slice) `slice_h`.
      */
     SwsPassFunc run;
+    SwsBackend backend; /* backend this pass is using, or 0 */
     enum AVPixelFormat format; /* new pixel format */
-    int width, height; /* new output size */
+    int lines;         /* pass dispatch size */
     int slice_h;       /* filter granularity */
     int num_slices;
 
@@ -124,6 +125,7 @@ typedef struct SwsGraph {
     int num_threads; /* resolved at init() time */
     bool incomplete; /* set during init() if formats had to be inferred */
     bool noop;       /* set during init() if the graph is a no-op */
+    SwsBackend backend; /* backends this graph is using, set during init() */
 
     AVBufferRef *hw_frames_ref;
 
@@ -141,7 +143,6 @@ typedef struct SwsGraph {
      * Currently active format and processing parameters.
      */
     SwsFormat src, dst;
-    int field;
 
     /**
      * Temporary execution state inside ff_sws_graph_run(); used to pass
@@ -164,13 +165,13 @@ SwsGraph *ff_sws_graph_alloc(void);
  * negative error.
  */
 int ff_sws_graph_init(SwsGraph *graph, SwsContext *ctx, const SwsFormat *dst,
-                      const SwsFormat *src, int field);
+                      const SwsFormat *src);
 
 /**
  * Allocate and initialize the filter graph. Returns 0 or a negative error.
  */
-int sws_graph_create(SwsContext *ctx, const SwsFormat *dst, const SwsFormat *src,
-                     int field, SwsGraph **out_graph);
+int ff_sws_graph_create(SwsContext *ctx, const SwsFormat *dst, const SwsFormat *src,
+                        SwsGraph **out_graph);
 
 
 /**
@@ -182,6 +183,7 @@ int sws_graph_create(SwsContext *ctx, const SwsFormat *dst, const SwsFormat *src
  * @param w      Width of the output image.
  * @param h      Height of the output image.
  * @param input  Previous pass to read from, or NULL for the input image.
+ * @param lines  Override the number of lines processed for this pass. (Optional)
  * @param align  Minimum slice alignment for this pass, or 0 for no threading.
  * @param run    Filter function to run.
  * @param setup  Optional setup function to run from the main thread.
@@ -192,7 +194,8 @@ int sws_graph_create(SwsContext *ctx, const SwsFormat *dst, const SwsFormat *src
  */
 int ff_sws_graph_add_pass(SwsGraph *graph, enum AVPixelFormat fmt,
                           int width, int height, SwsPass *input,
-                          int align, SwsPassFunc run, SwsPassSetup setup,
+                          int lines, int align,
+                          SwsPassFunc run, SwsPassSetup setup,
                           void *priv, void (*free)(void *priv),
                           SwsPass **out_pass);
 
@@ -204,12 +207,10 @@ void ff_sws_graph_rollback(SwsGraph *graph, int since_idx);
 /**
  * Uninitialize any state associate with this filter graph and free it.
  */
-void sws_graph_free(SwsGraph **graph);
+void ff_sws_graph_free(SwsGraph **graph);
 
 /**
- * Wrapper around sws_graph_create that does nothing if the format is
- * unchanged. Must be called after changing any of the fields in `ctx`, or else
- * they will have no effect.
+ * Update dynamic per-frame HDR metadata without requiring a full reinit.
  */
 void ff_sws_graph_update_metadata(SwsGraph *graph, const SwsColor *color);
 
@@ -221,7 +222,7 @@ void ff_sws_graph_update_metadata(SwsGraph *graph, const SwsColor *color);
  * will have no effect.
  */
 int ff_sws_graph_reinit(SwsGraph *graph, SwsContext *ctx, const SwsFormat *dst,
-                        const SwsFormat *src, int field);
+                        const SwsFormat *src);
 
 /**
  * Dispatch the filter graph on a single field of the given frames. Internally

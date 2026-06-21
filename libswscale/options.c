@@ -86,6 +86,7 @@ static const AVOption swscale_options[] = {
 
     { "sws_dither",      "set dithering algorithm",       OFFSET(dither),    AV_OPT_TYPE_INT,    { .i64  = SWS_DITHER_AUTO     }, .flags = VE, .unit = "sws_dither", .max = SWS_DITHER_NB - 1 },
         { "auto",        "automatic selection",           0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_DITHER_AUTO     }, .flags = VE, .unit = "sws_dither" },
+        { "none",        "no dithering",                  0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_DITHER_NONE     }, .flags = VE, .unit = "sws_dither" },
         { "bayer",       "ordered matrix dither",         0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_DITHER_BAYER    }, .flags = VE, .unit = "sws_dither" },
         { "ed",          "full error diffusion",          0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_DITHER_ED       }, .flags = VE, .unit = "sws_dither" },
         { "a_dither",    "arithmetic addition dither",    0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_DITHER_A_DITHER }, .flags = VE, .unit = "sws_dither" },
@@ -98,6 +99,25 @@ static const AVOption swscale_options[] = {
 
     { "threads",         "number of threads",             OFFSET(threads),   AV_OPT_TYPE_INT,   {.i64 = 1 }, .flags = VE, .unit = "threads", .max = INT_MAX },
         { "auto",        "automatic selection",           0,                 AV_OPT_TYPE_CONST, {.i64 = 0 }, .flags = VE, .unit = "threads" },
+
+    { "intent",          "color mapping intent",        OFFSET(intent), AV_OPT_TYPE_INT,    { .i64 = SWS_INTENT_RELATIVE_COLORIMETRIC }, .flags = VE, .unit = "intent", .max = SWS_INTENT_NB - 1 },
+        { "perceptual",            "perceptual tone mapping",        0, AV_OPT_TYPE_CONST,  { .i64 = SWS_INTENT_PERCEPTUAL            }, .flags = VE, .unit = "intent" },
+        { "relative_colorimetric", "relative colorimetric clipping", 0, AV_OPT_TYPE_CONST,  { .i64 = SWS_INTENT_RELATIVE_COLORIMETRIC }, .flags = VE, .unit = "intent" },
+        { "saturation",            "saturation mapping",             0, AV_OPT_TYPE_CONST,  { .i64 = SWS_INTENT_SATURATION            }, .flags = VE, .unit = "intent" },
+        { "absolute_colorimetric", "absolute colorimetric clipping", 0, AV_OPT_TYPE_CONST,  { .i64 = SWS_INTENT_ABSOLUTE_COLORIMETRIC }, .flags = VE, .unit = "intent" },
+
+    { "sws_backends",    "set allowed swscale backends",  OFFSET(backends),  AV_OPT_TYPE_FLAGS,  { .i64  = 0                    }, .flags = VE, .unit = "sws_backend", .max = UINT_MAX },
+        { "auto",        "automatic selection",           0,                 AV_OPT_TYPE_CONST,  { .i64  = 0                    }, .flags = VE, .unit = "sws_backend" },
+        { "stable",      "All stable backends",           0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_BACKEND_STABLE   }, .flags = VE, .unit = "sws_backend" },
+        { "unstable",    "All unstable backends",         0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_BACKEND_UNSTABLE }, .flags = VE, .unit = "sws_backend" },
+        { "all",         "All available backends",        0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_BACKEND_ALL      }, .flags = VE, .unit = "sws_backend" },
+        { "legacy",      "legacy swscale code",           0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_BACKEND_LEGACY   }, .flags = VE, .unit = "sws_backend" },
+        { "c",           "template-based reference code", 0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_BACKEND_C        }, .flags = VE, .unit = "sws_backend" },
+        { "memcpy",      "fast path using libc memcpy",   0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_BACKEND_MEMCPY   }, .flags = VE, .unit = "sws_backend" },
+        { "x86",         "x86 SIMD kernels",              0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_BACKEND_X86      }, .flags = VE, .unit = "sws_backend" },
+        { "aarch64",     "AArch64 NEON kernels",          0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_BACKEND_AARCH64  }, .flags = VE, .unit = "sws_backend" },
+        { "spirv",       "Vulkan SPIR-V backend",         0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_BACKEND_SPIRV    }, .flags = VE, .unit = "sws_backend" },
+        { "glsl",        "Vulkan GLSL backend",           0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_BACKEND_GLSL     }, .flags = VE, .unit = "sws_backend" },
 
     { NULL }
 };

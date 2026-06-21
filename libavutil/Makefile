@@ -74,6 +74,7 @@ HEADERS = adler32.h                                                     \
           pixelutils.h                                                  \
           pixfmt.h                                                      \
           random_seed.h                                                 \
+          raw_color_params.h                                            \
           rc4.h                                                         \
           rational.h                                                    \
           replaygain.h                                                  \
@@ -164,6 +165,7 @@ OBJS = adler32.o                                                        \
        pixdesc.o                                                        \
        pixelutils.o                                                     \
        random_seed.o                                                    \
+       raw_color_params.o                                               \
        rational.o                                                       \
        reverse.o                                                        \
        rc4.o                                                            \

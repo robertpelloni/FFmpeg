@@ -590,7 +590,7 @@ static void solve_range_convert(uint16_t src_min, uint16_t src_max,
 
 static void init_range_convert_constants(SwsInternal *c)
 {
-    const int bit_depth = c->dstBpc ? c->dstBpc : 8;
+    const int bit_depth = c->dstBpc ? FFMIN(c->dstBpc, 16) : 8;
     const int src_bits = bit_depth <= 14 ? 15 : 19;
     const int src_shift = src_bits - bit_depth;
     const int mult_shift = bit_depth <= 14 ? 14 : 18;
@@ -779,10 +779,10 @@ static void xyz12Torgb48_c(const SwsInternal *c, uint8_t *dst, int dst_stride,
                 c->xyz2rgb.mat[2][1] * y +
                 c->xyz2rgb.mat[2][2] * z >> 12;
 
-            // limit values to 12-bit depth
-            r = av_clip_uintp2(r, 12);
-            g = av_clip_uintp2(g, 12);
-            b = av_clip_uintp2(b, 12);
+            // limit values to 16-bit depth
+            r = av_clip_uint16(r);
+            g = av_clip_uint16(g);
+            b = av_clip_uint16(b);
 
             // convert from sRGBlinear to RGB and scale from 12bit to 16bit
             if (desc->flags & AV_PIX_FMT_FLAG_BE) {
@@ -838,10 +838,10 @@ static void rgb48Toxyz12_c(const SwsInternal *c, uint8_t *dst, int dst_stride,
                 c->rgb2xyz.mat[2][1] * g +
                 c->rgb2xyz.mat[2][2] * b >> 12;
 
-            // limit values to 12-bit depth
-            x = av_clip_uintp2(x, 12);
-            y = av_clip_uintp2(y, 12);
-            z = av_clip_uintp2(z, 12);
+            // limit values to 16-bit depth
+            x = av_clip_uint16(x);
+            y = av_clip_uint16(y);
+            z = av_clip_uint16(z);
 
             // convert from XYZlinear to X'Y'Z' and scale from 12bit to 16bit
             if (desc->flags & AV_PIX_FMT_FLAG_BE) {
@@ -932,6 +932,14 @@ void ff_update_palette(SwsInternal *c, const uint32_t *pal)
 #endif
             c->pal_rgb[i]= a + (b<<8) + (g<<16) + ((unsigned)r<<24);
             break;
+        case AV_PIX_FMT_GBRP:
+        case AV_PIX_FMT_GBRAP:
+#if HAVE_BIGENDIAN
+            c->pal_rgb[i]= a + (r<<8) + (b<<16) + ((unsigned)g<<24);
+#else
+            c->pal_rgb[i]= g + (b<<8) + (r<<16) + ((unsigned)a<<24);
+#endif
+            break;
         case AV_PIX_FMT_RGB32:
 #if !HAVE_BIGENDIAN
         case AV_PIX_FMT_BGR24:
@@ -995,6 +1003,16 @@ static int scale_cascaded(SwsInternal *c,
                              0, dstH0);
     if (ret < 0)
         return ret;
+
+    /* The first stage assembles the full intermediate image from the input,
+     * one slice at a time (it is itself a regular slice-capable context). The
+     * second stage scales that whole intermediate to the output in one step,
+     * so it can only run once the entire source has been consumed. The first
+     * stage resets its slice direction to 0 at end of frame; until then the
+     * intermediate is incomplete and this call produces no output lines. */
+    if (sws_internal(c->cascaded_context[0])->sliceDir != 0)
+        return 0;
+
     ret = scale_internal(c->cascaded_context[1],
                          (const uint8_t * const * )c->cascaded_tmp[0], c->cascaded_tmpStride[0],
                          0, dstH0, dstSlice, dstStride, dstSliceY, dstSliceH);
@@ -1059,7 +1077,7 @@ static int scale_internal(SwsContext *sws,
         return scale_gamma(c, srcSlice, srcStride, srcSliceY, srcSliceH,
                            dstSlice, dstStride, dstSliceY, dstSliceH);
 
-    if (c->cascaded_context[0] && srcSliceY == 0 && srcSliceH == c->cascaded_context[0]->src_h)
+    if (c->cascaded_context[0])
         return scale_cascaded(c, srcSlice, srcStride, srcSliceY, srcSliceH,
                               dstSlice, dstStride, dstSliceY, dstSliceH);
 
@@ -1433,6 +1451,9 @@ static int validate_params(SwsContext *ctx)
     VALIDATE(threads,       0, SWS_MAX_THREADS);
     VALIDATE(dither,        0, SWS_DITHER_NB - 1)
     VALIDATE(alpha_blend,   0, SWS_ALPHA_BLEND_NB - 1)
+    VALIDATE(intent,        0, SWS_INTENT_NB - 1);
+    VALIDATE(scaler,        0, SWS_SCALE_NB - 1)
+    VALIDATE(scaler_sub,    0, SWS_SCALE_NB - 1)
     return 0;
 }
 
@@ -1477,9 +1498,11 @@ int sws_frame_setup(SwsContext *ctx, const AVFrame *dst, const AVFrame *src)
     }
 
     int dst_width = dst->width;
+    const SwsBackend backends = ff_sws_enabled_backends(ctx);
     for (int field = 0; field < 2; field++) {
         SwsFormat src_fmt = ff_fmt_from_frame(src, field);
         SwsFormat dst_fmt = ff_fmt_from_frame(dst, field);
+        int src_ok, dst_ok;
 
         if ((src->flags ^ dst->flags) & AV_FRAME_FLAG_INTERLACED) {
             err_msg = "Cannot convert interlaced to progressive frames or vice versa.\n";
@@ -1487,18 +1510,10 @@ int sws_frame_setup(SwsContext *ctx, const AVFrame *dst, const AVFrame *src)
             goto fail;
         }
 
-        /* TODO: remove once implemented */
-        if ((dst_fmt.prim != src_fmt.prim || dst_fmt.trc != src_fmt.trc) &&
-            !s->color_conversion_warned)
-        {
-            av_log(ctx, AV_LOG_WARNING, "Conversions between different primaries / "
-                   "transfer functions are not currently implemented, expect "
-                   "wrong results.\n");
-            s->color_conversion_warned = 1;
-        }
-
-        if (!ff_test_fmt(&src_fmt, 0)) {
-            err_msg = "Unsupported input";
+        src_ok = ff_test_fmt(backends, &src_fmt, 0);
+        dst_ok = ff_test_fmt(backends, &dst_fmt, 1);
+        if ((!src_ok || !dst_ok) && !ff_fmt_equal(&src_fmt, &dst_fmt)) {
+            err_msg = src_ok ? "Unsupported output" : "Unsupported input";
             ret = AVERROR(ENOTSUP);
             goto fail;
         }
@@ -1512,7 +1527,7 @@ int sws_frame_setup(SwsContext *ctx, const AVFrame *dst, const AVFrame *src)
             }
         }
 
-        ret = ff_sws_graph_reinit(s->graph[field], ctx, &dst_fmt, &src_fmt, field);
+        ret = ff_sws_graph_reinit(s->graph[field], ctx, &dst_fmt, &src_fmt);
         if (ret < 0) {
             err_msg = "Failed initializing scaling graph";
             goto fail;
@@ -1533,7 +1548,7 @@ int sws_frame_setup(SwsContext *ctx, const AVFrame *dst, const AVFrame *src)
         }
 
         if (!src_fmt.interlaced) {
-            sws_graph_free(&s->graph[FIELD_BOTTOM]);
+            ff_sws_graph_free(&s->graph[FIELD_BOTTOM]);
             break;
         }
 
@@ -1544,12 +1559,12 @@ int sws_frame_setup(SwsContext *ctx, const AVFrame *dst, const AVFrame *src)
                                           " fmt:%s csp:%s prim:%s trc:%s\n",
                err_msg, av_err2str(ret),
                av_get_pix_fmt_name(src_fmt.format), av_color_space_name(src_fmt.csp),
-               av_color_primaries_name(src_fmt.prim), av_color_transfer_name(src_fmt.trc),
+               av_color_primaries_name(src_fmt.color.prim), av_color_transfer_name(src_fmt.color.trc),
                av_get_pix_fmt_name(dst_fmt.format), av_color_space_name(dst_fmt.csp),
-               av_color_primaries_name(dst_fmt.prim), av_color_transfer_name(dst_fmt.trc));
+               av_color_primaries_name(dst_fmt.color.prim), av_color_transfer_name(dst_fmt.color.trc));
 
         for (int i = 0; i < FF_ARRAY_ELEMS(s->graph); i++)
-            sws_graph_free(&s->graph[i]);
+            ff_sws_graph_free(&s->graph[i]);
 
         return ret;
     }

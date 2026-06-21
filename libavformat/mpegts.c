@@ -43,6 +43,7 @@
 #include "demux.h"
 #include "mpeg.h"
 #include "isom.h"
+#include "id3v2.h"
 #if CONFIG_ICONV
 #include <iconv.h>
 #endif
@@ -184,6 +185,7 @@ struct MpegTSContext {
     /* scan context */
     /** structure to keep track of Program->pids mapping */
     unsigned int nb_prg;
+    unsigned int prg_size; ///< allocated size of prg in bytes
     struct Program *prg;
 
     int8_t crc_validity[NB_PID_MAX];
@@ -331,17 +333,26 @@ static void clear_programs(MpegTSContext *ts)
 {
     av_freep(&ts->prg);
     ts->nb_prg = 0;
+    ts->prg_size = 0;
 }
 
 static struct Program * add_program(MpegTSContext *ts, unsigned int programid)
 {
     struct Program *p = get_program(ts, programid);
+    struct Program *tmp = NULL;
+    size_t new_prg_size;
     if (p)
         return p;
-    if (av_reallocp_array(&ts->prg, ts->nb_prg + 1, sizeof(*ts->prg)) < 0) {
-        ts->nb_prg = 0;
+
+    if (!av_size_mult(ts->nb_prg + 1,  sizeof(*ts->prg), &new_prg_size))
+        tmp = av_fast_realloc(ts->prg, &ts->prg_size,new_prg_size);
+    if (!tmp) {
+        av_freep(&ts->prg);
+        ts->nb_prg   = 0;
+        ts->prg_size = 0;
         return NULL;
     }
+    ts->prg = tmp;
     p = &ts->prg[ts->nb_prg];
     p->id = programid;
     clear_program(p);
@@ -1029,6 +1040,30 @@ static void new_data_packet(const uint8_t *buffer, int len, AVPacket *pkt)
     pkt->size = len;
 }
 
+static int timed_id3_update_metadata(AVStream *s, AVPacket *pkt)
+{
+    FFIOContext id3_buf;
+    ID3v2ExtraMeta *extra_meta = NULL;
+    AVDictionary *metadata = NULL;
+    int ret = 0;
+
+    ffio_init_read_context(&id3_buf, pkt->data, pkt->size);
+    ff_id3v2_read_dict(&id3_buf.pub, &metadata, ID3v2_DEFAULT_MAGIC, &extra_meta);
+    ret = ff_id3v2_parse_priv_dict(&metadata, extra_meta);
+    ff_id3v2_free_extra_meta(&extra_meta);
+
+    if (ret < 0 || !av_dict_count(metadata))
+        goto end;
+
+    ret = av_dict_copy(&s->metadata, metadata, 0);
+    if (ret == 0)
+        s->event_flags |= AVSTREAM_EVENT_FLAG_METADATA_UPDATED;
+
+end:
+    av_dict_free(&metadata);
+    return ret;
+}
+
 static int new_pes_packet(PESContext *pes, AVPacket *pkt)
 {
     uint8_t *sd;
@@ -1082,6 +1117,12 @@ static int new_pes_packet(PESContext *pes, AVPacket *pkt)
     if (!sd)
         return AVERROR(ENOMEM);
     *sd = pes->stream_id;
+
+    if (pes->st->codecpar->codec_id == AV_CODEC_ID_TIMED_ID3) {
+        int ret = timed_id3_update_metadata(pes->st, pkt);
+        if (ret < 0)
+            return ret;
+    }
 
     return 0;
 }
@@ -3446,6 +3487,8 @@ static int mpegts_probe(const AVProbeData *p)
     ff_dlog(0, "TS score: %d %d\n", sumscore, maxscore);
 
     if        (check_count > CHECK_COUNT && sumscore > 6) {
+        return AVPROBE_SCORE_MAX   + sumscore - CHECK_COUNT;
+    } else if (check_count >= CHECK_COUNT && sumscore >= CHECK_COUNT) {
         return AVPROBE_SCORE_MAX   + sumscore - CHECK_COUNT;
     } else if (check_count >= CHECK_COUNT && sumscore > 6) {
         return AVPROBE_SCORE_MAX/2 + sumscore - CHECK_COUNT;
