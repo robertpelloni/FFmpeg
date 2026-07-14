@@ -3609,7 +3609,7 @@ int av_color_range_from_name(const char *name)
     int i;
 
     for (i = 0; i < FF_ARRAY_ELEMS(color_range_names); i++) {
-        if (av_strstart(name, color_range_names[i], NULL))
+        if (!strcmp(name, color_range_names[i]))
             return i;
     }
 
@@ -3634,7 +3634,7 @@ int av_color_primaries_from_name(const char *name)
         if (!color_primaries_names[i])
             continue;
 
-        if (av_strstart(name, color_primaries_names[i], NULL))
+        if (!strcmp(name, color_primaries_names[i]))
             return i;
     }
 
@@ -3642,7 +3642,7 @@ int av_color_primaries_from_name(const char *name)
         if (!color_primaries_names_ext[i])
             continue;
 
-        if (av_strstart(name, color_primaries_names_ext[i], NULL))
+        if (!strcmp(name, color_primaries_names_ext[i]))
             return AVCOL_PRI_EXT_BASE + i;
     }
 
@@ -3667,7 +3667,7 @@ int av_color_transfer_from_name(const char *name)
         if (!color_transfer_names[i])
             continue;
 
-        if (av_strstart(name, color_transfer_names[i], NULL))
+        if (!strcmp(name, color_transfer_names[i]))
             return i;
     }
 
@@ -3675,7 +3675,7 @@ int av_color_transfer_from_name(const char *name)
         if (!color_transfer_names_ext[i])
             continue;
 
-        if (av_strstart(name, color_transfer_names_ext[i], NULL))
+        if (!strcmp(name, color_transfer_names_ext[i]))
             return AVCOL_TRC_EXT_BASE + i;
     }
 
@@ -3696,7 +3696,7 @@ int av_color_space_from_name(const char *name)
         if (!color_space_names[i])
             continue;
 
-        if (av_strstart(name, color_space_names[i], NULL))
+        if (!strcmp(name, color_space_names[i]))
             return i;
     }
 
@@ -3717,7 +3717,7 @@ int av_chroma_location_from_name(const char *name)
         if (!chroma_location_names[i])
             continue;
 
-        if (av_strstart(name, chroma_location_names[i], NULL))
+        if (!strcmp(name, chroma_location_names[i]))
             return i;
     }
 
@@ -3759,7 +3759,7 @@ enum AVAlphaMode av_alpha_mode_from_name(const char *name)
         if (!alpha_mode_names[i])
             continue;
 
-        if (av_strstart(name, alpha_mode_names[i], NULL))
+        if (!strcmp(name, alpha_mode_names[i]))
             return i;
     }
 

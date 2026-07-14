@@ -29,7 +29,11 @@
 
 // Major bumping may affect Ticket5467, 5421, 5451(compatibility with Chromium)
 // Also please add any ticket numbers that you believe might be affected here
+<<<<<<< HEAD
 #define LIBAVFORMAT_VERSION_MAJOR  61
+=======
+#define LIBAVFORMAT_VERSION_MAJOR  63
+>>>>>>> upstream/master
 
 /**
  * FF_API_* defines may be placed below to indicate public API that will be
@@ -41,6 +45,7 @@
  * at once through the bump. This improves the git bisect-ability of the change.
  *
  */
+<<<<<<< HEAD
 #define FF_API_COMPUTE_PKT_FIELDS2      (LIBAVFORMAT_VERSION_MAJOR < 62)
 #define FF_API_LAVF_SHORTEST            (LIBAVFORMAT_VERSION_MAJOR < 62)
 #define FF_API_ALLOW_FLUSH              (LIBAVFORMAT_VERSION_MAJOR < 62)
@@ -52,6 +57,11 @@
 #define FF_API_NO_DEFAULT_TLS_VERIFY    (LIBAVFORMAT_VERSION_MAJOR < 63)
 
 #define FF_API_FDEBUG_TS                (LIBAVFORMAT_VERSION_MAJOR < 63)
+=======
+#define FF_API_COMPUTE_PKT_FIELDS2      (LIBAVFORMAT_VERSION_MAJOR < 64)
+
+#define FF_API_FDEBUG_TS                (LIBAVFORMAT_VERSION_MAJOR < 64)
+>>>>>>> upstream/master
 
 #define FF_API_LCEVC_STRUCT             (LIBAVFORMAT_VERSION_MAJOR < 64)
 

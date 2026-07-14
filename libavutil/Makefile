@@ -260,6 +260,7 @@ TESTPROGS = adler32                                                     \
             detection_bbox                                              \
             dict                                                        \
             display                                                     \
+            dovi_meta                                                   \
             encryption_info                                             \
             error                                                       \
             eval                                                        \
@@ -275,6 +276,7 @@ TESTPROGS = adler32                                                     \
             lfg                                                         \
             lls                                                         \
             log                                                         \
+            mastering_display_metadata                                  \
             mathematics                                                 \
             md5                                                         \
             murmur3                                                     \
@@ -303,6 +305,7 @@ TESTPROGS = adler32                                                     \
             utf8                                                        \
             uuid                                                        \
             video_enc_params                                            \
+            video_hint                                                  \
             xtea                                                        \
             tea                                                         \
 
